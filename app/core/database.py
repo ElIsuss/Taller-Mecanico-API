@@ -1,0 +1,28 @@
+from collections.abc import AsyncGenerator
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from app.core.config import settings
+
+
+def create_engine_and_session_maker():
+    """Create engine and session maker - called from lifespan."""
+    engine = create_async_engine(
+        settings.SQLALCHEMY_DATABASE_URI,
+        echo=False,
+        future=True,
+        pool_pre_ping=True,
+    )
+    async_session_maker = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+    return engine, async_session_maker
+
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """Get session from app.state (set in lifespan)."""
+    from app.main import app
+    async with app.state.async_session_maker() as session:
+        yield session

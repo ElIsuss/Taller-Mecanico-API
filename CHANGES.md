@@ -90,7 +90,7 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
 > Nota: `C-01` y `C-02` son estrictamente secuenciales; no hay paralelismo dentro de la fase.
 
 ### [C-01] `proyecto-configuracion-ciclo-vida`
-- **Estado**: `[ ]` pendiente
+- **Estado**: `[x]` completado
 - **Puntos**: 8 | **Orden sugerido**: 1
 - **Scope**:
   - Estructura de carpetas obligatoria: `app/core/` y `app/modules/<modulo>/` (auth, clientes, vehiculos, repuestos, ordenes, roles)
