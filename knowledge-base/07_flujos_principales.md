@@ -56,7 +56,7 @@ Cliente → API (/auth/registro) → Service → UoW → Repository → DB
 5. La orden nace en estado PENDIENTE (catálogo `estado_orden`, RN-19)
 
 **Casos de error**:
-- Orden sin ítems o con repuestos repetidos → 400 (RN-10)
+- Orden sin ítems o con repuestos repetidos → 422 (RN-10)
 
 ---
 

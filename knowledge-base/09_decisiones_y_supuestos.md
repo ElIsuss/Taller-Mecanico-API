@@ -31,8 +31,8 @@
 **Trade-offs aceptados**: Requiere ejecutar migraciones antes de usar la base; el disparador de solo agregado debe escribirse a mano.
 
 ### DD-05 — Borrado lógico para vehículos y repuestos
-**Decisión**: Vehículos y repuestos se dan de baja lógicamente (`fecha_baja`), no se borran físicamente.
-**Contexto**: RN-16 exige conservar datos aunque dejen de aparecer.
+**Decisión**: Vehículos y repuestos se dan de baja lógicamente (`borrado_en`), no se borran físicamente.
+**Contexto**: RN-16 exige conservar datos aunque dejen de aparecer; el TP nombra la columna `borrado_en`.
 **Alternativas consideradas**: Borrado físico (`DELETE`).
 **Justificación**: Cumple RN-16 y permite índices únicos parciales sobre los vigentes (RN-01).
 **Trade-offs aceptados**: Todas las consultas deben filtrar por vigentes; más complejidad en consultas.

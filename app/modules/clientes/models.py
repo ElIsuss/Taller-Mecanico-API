@@ -1,35 +1,35 @@
 """Clientes domain model: cliente."""
 
-from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import DateTime, Index, text
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from app.modules.auth.models import Usuario
+    from app.modules.vehiculos.models import Vehiculo
 
 
 class Cliente(SQLModel, table=True):
-    """Ficha de cliente con documento unico entre vigentes y borrado logico."""
+    """Ficha de cliente; puede estar vinculada a un usuario (1:1) y tener vehiculos."""
 
     __tablename__ = "cliente"
-    __table_args__ = (
-        Index(
-            "ix_cliente_documento_uc",
-            "documento",
-            unique=True,
-            postgresql_where=text("fecha_baja IS NULL"),
-        ),
-    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    documento: str = Field(index=True, nullable=False)
-    nombre: str = Field(nullable=False)
-    fecha_alta: datetime = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
-    )
-    fecha_baja: Optional[datetime] = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=True,
+    usuario_id: Optional[int] = Field(
         default=None,
+        foreign_key="usuario.id",
+        nullable=True,
+        unique=True,
+    )
+    nombre: str = Field(nullable=False)
+    documento: str = Field(nullable=False, unique=True)
+    telefono: str = Field(nullable=False)
+
+    usuario: Optional["Usuario"] = Relationship(
+        back_populates="cliente",
+        sa_relationship_kwargs={"lazy": "raise", "uselist": False},
+    )
+    vehiculos: List["Vehiculo"] = Relationship(
+        back_populates="cliente",
+        sa_relationship_kwargs={"lazy": "raise"},
     )

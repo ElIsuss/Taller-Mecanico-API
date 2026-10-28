@@ -1,28 +1,37 @@
-"""Validation of Alembic migrations against a real PostgreSQL database (C-02 tasks 4.1-4.4)."""
+"""Validation of Alembic migrations against a real PostgreSQL database (C-02 tasks 4.1-4.4).
+
+Requires a reachable PostgreSQL and the env var TEST_DATABASE_URL, e.g.:
+  TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5433/taller_mecanico_test
+"""
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import asyncpg
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TEST_DB_URL = "postgresql+asyncpg://postgres:isussmegapro1010@localhost:5432/taller_mecanico_test"
-SYNC_DB_URL = "postgresql+psycopg2://postgres:isussmegapro1010@localhost:5432/taller_mecanico_test"
+TEST_DB_URL = os.environ.get("TEST_DATABASE_URL")
+if not TEST_DB_URL:
+    pytest.skip(
+        "TEST_DATABASE_URL no está definida; se omiten las validaciones contra PostgreSQL",
+        allow_module_level=True,
+    )
+ASYNC_DB_URL = TEST_DB_URL.replace("postgresql+asyncpg://", "postgresql://")
 
 EXPECTED_TABLES = {
-    "cliente", "estado_orden", "repuesto", "rol",
-    "historial_precio_repuesto", "movimiento_stock",
-    "usuario", "vehiculo", "orden_trabajo", "rol_asignacion",
-    "historial_estado_orden", "orden_item",
+    "usuario", "asignacion_rol", "intento_acceso", "evento_seguridad",
+    "cliente", "vehiculo", "repuesto",
+    "estado_orden", "orden_trabajo", "item_orden",
+    "historial_estado_orden", "movimiento_stock", "historial_precio_repuesto",
 }
 
 PARTIAL_UNIQUE_INDEXES = {
-    "cliente": "ix_cliente_documento_uc",
-    "repuesto": "ix_repuesto_codigo_uc",
-    "usuario": "ix_usuario_email_uc",
-    "vehiculo": "ix_vehiculo_patente_uc",
+    "ix_vehiculo_patente_uc": "BORRADO_EN IS NULL",
+    "ix_repuesto_codigo_uc": "BORRADO_EN IS NULL",
+    "ix_asignacion_rol_usuario_rol_uc": "REVOCADA_EN IS NULL",
 }
 
 PROTECTED_TABLES = (
@@ -37,7 +46,7 @@ def _run_alembic(args):
     env["DATABASE_URL"] = TEST_DB_URL
     env["PYTHONPATH"] = str(PROJECT_ROOT)
     return subprocess.run(
-        [str(PROJECT_ROOT / ".venv" / "Scripts" / "alembic.exe")] + args,
+        [sys.executable, "-m", "alembic"] + args,
         cwd=str(PROJECT_ROOT),
         capture_output=True, text=True, env=env,
     )
@@ -56,9 +65,7 @@ def clean_db():
 
 
 async def _pg():
-    return await asyncpg.connect(
-        "postgresql://postgres:isussmegapro1010@localhost:5432/taller_mecanico_test"
-    )
+    return await asyncpg.connect(ASYNC_DB_URL)
 
 
 async def _table_names(conn):
@@ -120,7 +127,7 @@ async def test_4_2_downgrade_base_drops_all_tables():
 
 @pytest.mark.asyncio
 async def test_4_3_partial_unique_indexes_exist():
-    """4.3: partial unique indexes (postgresql_where fecha_baja IS NULL) exist."""
+    """4.3: los indices unicos parciales del TP existen con su predicado."""
     _run_alembic(["upgrade", "head"])
 
     conn = await _pg()
@@ -129,11 +136,10 @@ async def test_4_3_partial_unique_indexes_exist():
     finally:
         await conn.close()
 
-    for table, index_name in PARTIAL_UNIQUE_INDEXES.items():
-        assert index_name in indexes, f"Missing partial unique index {index_name} on {table}"
-        indexdef = indexes[index_name]
-        assert "WHERE fecha_baja IS NULL" in indexdef.upper(), (
-            f"Index {index_name} is not a partial unique index (no WHERE fecha_baja IS NULL)"
+    for index_name, predicate in PARTIAL_UNIQUE_INDEXES.items():
+        assert index_name in indexes, f"Missing partial unique index {index_name}"
+        assert predicate in indexes[index_name].upper(), (
+            f"Index {index_name} no es parcial: {indexes[index_name]}"
         )
 
 
@@ -159,20 +165,49 @@ async def test_4_4_trigger_rejects_update_and_delete():
 
     conn = await _pg()
     try:
-        # Insert parent repuesto, then a movimiento_stock row (INSERT is allowed).
         await conn.execute(
-            "INSERT INTO repuesto (id, codigo, nombre, precio, stock) VALUES (1, 'REP-001', 'Test', 10.0, 5)"
+            "INSERT INTO usuario (id, email, nombre, password_hash, activo, debe_cambiar_password) "
+            "VALUES (1, 'mecanico@test.com', 'Mecanico', 'hash', true, false)"
         )
         await conn.execute(
-            "INSERT INTO movimiento_stock (id, repuesto_id, tipo, cantidad) VALUES (1, 1, 'alta', 10)"
+            "INSERT INTO repuesto (id, codigo, descripcion, precio, stock) "
+            "VALUES (1, 'REP-001', 'Test', 10.0, 5)"
+        )
+        await conn.execute(
+            "INSERT INTO movimiento_stock (id, repuesto_id, usuario_id, cantidad, motivo) "
+            "VALUES (1, 1, 1, 10, 'ingreso')"
         )
 
-        # UPDATE must be rejected.
         with pytest.raises(asyncpg.PostgresError):
             await conn.execute("UPDATE movimiento_stock SET cantidad = 99 WHERE id = 1")
 
-        # DELETE must be rejected.
         with pytest.raises(asyncpg.PostgresError):
             await conn.execute("DELETE FROM movimiento_stock WHERE id = 1")
     finally:
         await conn.close()
+
+
+@pytest.mark.asyncio
+async def test_4_5_autogenerate_sin_diferencias():
+    """4.5: el esquema migrado coincide con los modelos (sin drift al autogenerar)."""
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlmodel import SQLModel
+
+    import app.core.models  # noqa: F401
+
+    _run_alembic(["upgrade", "head"])
+    engine = create_async_engine(TEST_DB_URL)
+
+    def _diff(sync_conn):
+        context = MigrationContext.configure(sync_conn)
+        return compare_metadata(context, SQLModel.metadata)
+
+    try:
+        async with engine.connect() as conn:
+            diff = await conn.run_sync(_diff)
+    finally:
+        await engine.dispose()
+
+    assert diff == [], f"Modelos y migraciones divergen: {diff}"

@@ -3,6 +3,8 @@ uvicorn
 sqlmodel
 sqlalchemy[asyncio]
 asyncpg
+alembic
+bcrypt
 python-dotenv
 pydantic-settings
 pytest

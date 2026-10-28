@@ -1,6 +1,5 @@
 """Tests for app.modules.auth.models (C-02 task 2.1)."""
 
-from sqlalchemy import inspect
 from sqlmodel import SQLModel
 
 import app.modules.auth.models as auth_models
@@ -11,47 +10,112 @@ def test_auth_module_imports_without_errors():
     assert auth_models is not None
 
 
-def test_usuario_model_has_expected_columns_and_fk():
-    """usuario: email, password_hash, password_cambiada_en, fecha_alta/fecha_baja, cliente_id FK."""
-    inspector = inspect(SQLModel.metadata.tables["usuario"])
-    columns = {c.name: c for c in inspector.columns}
-    for col in ("id", "email", "password_hash", "password_cambiada_en", "fecha_alta", "fecha_baja", "cliente_id"):
-        assert col in columns, f"usuario missing column: {col}"
+def test_usuario_model_has_expected_columns():
+    """usuario: id, email, nombre, password_hash, activo, flags y password_cambiada_en."""
+    columns = set(SQLModel.metadata.tables["usuario"].c.keys())
+    expected = {
+        "id",
+        "email",
+        "nombre",
+        "password_hash",
+        "activo",
+        "debe_cambiar_password",
+        "password_cambiada_en",
+    }
+    assert expected <= columns, f"usuario missing columns: {sorted(expected - columns)}"
 
-    fks = {fk.name for fk in inspector.foreign_keys}
-    assert any("cliente" in str(fk) for fk in inspector.foreign_keys), "usuario.cliente_id must FK to cliente.id"
+
+def test_usuario_email_is_unique_and_not_nullable():
+    """Usuario.email es unico (UNIQUE simple, RN-02) y obligatorio."""
+    col = SQLModel.metadata.tables["usuario"].c.email
+    assert col.unique is True
+    assert col.nullable is False
 
 
-def test_usuario_password_cambiada_en_is_timezone_aware():
-    """password_cambiada_en must be DateTime(timezone=True)."""
+def test_usuario_password_cambiada_en_is_timezone_aware_and_nullable():
+    """password_cambiada_en es timestamptz y nullable."""
     col = SQLModel.metadata.tables["usuario"].c.password_cambiada_en
     assert col.type.timezone is True
+    assert col.nullable is True
 
 
-def test_rol_model_has_catalog_columns():
-    """rol: id, nombre, fecha_alta, fecha_baja."""
-    table = SQLModel.metadata.tables["rol"]
-    for col in ("id", "nombre", "fecha_alta", "fecha_baja"):
-        assert col in table.c, f"rol missing column: {col}"
+def test_asignacion_rol_has_fks_and_vigencia_columns():
+    """asignacion_rol: usuario_id, rol, desde, vence_en, revocada_en, otorgada_por."""
+    table = SQLModel.metadata.tables["asignacion_rol"]
+    expected = {
+        "id",
+        "usuario_id",
+        "rol",
+        "desde",
+        "vence_en",
+        "revocada_en",
+        "otorgada_por",
+    }
+    assert expected <= set(table.c.keys())
+
+    targets = {fk.target_fullname for fk in table.foreign_keys}
+    assert "usuario.id" in targets
+    assert any(fk.column.table.name == "usuario" for fk in table.foreign_keys)
 
 
-def test_rol_asignacion_has_fks_and_vigencia_columns():
-    """rol_asignacion: usuario_id FK, rol_id FK, fecha_desde, fecha_hasta, fecha_alta."""
-    table = SQLModel.metadata.tables["rol_asignacion"]
-    for col in ("id", "usuario_id", "rol_id", "fecha_desde", "fecha_hasta", "fecha_alta"):
-        assert col in table.c, f"rol_asignacion missing column: {col}"
+def test_asignacion_rol_rol_check_constraint():
+    """asignacion_rol.rol solo admite ADMIN/RECEPCION/MECANICO/CLIENTE."""
+    table = SQLModel.metadata.tables["asignacion_rol"]
+    checks = {c.name: str(c.sqltext) for c in table.constraints if c.__class__.__name__ == "CheckConstraint"}
+    assert "ck_asignacion_rol_rol_valido" in checks
+    sqltext = checks["ck_asignacion_rol_rol_valido"].upper()
+    for rol in ("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"):
+        assert rol in sqltext
 
-    fk_targets = {str(fk) for fk in table.foreign_keys}
-    assert any("usuario" in t for t in fk_targets), "rol_asignacion.usuario_id must FK to usuario.id"
-    assert any("rol" in t for t in fk_targets), "rol_asignacion.rol_id must FK to rol.id"
+
+def test_asignacion_rol_partial_unique_index():
+    """Un usuario no puede tener el mismo rol activo dos veces (RN-03)."""
+    index = next(
+        ix
+        for ix in SQLModel.metadata.tables["asignacion_rol"].indexes
+        if ix.name == "ix_asignacion_rol_usuario_rol_uc"
+    )
+    assert index.unique is True
+    where = index.dialect_options["postgresql"].get("where")
+    assert where is not None
+    assert "REVOCADA_EN IS NULL" in str(where).upper()
 
 
-def test_relationships_defined():
-    """Relationships must be declared on the ORM classes."""
+def test_intento_acceso_columns_and_index():
+    """intento_acceso registra email/ip/cuando/exito con indice compuesto."""
+    table = SQLModel.metadata.tables["intento_acceso"]
+    assert {"id", "cuando", "email", "ip", "exito"} <= set(table.c.keys())
+    index_names = {ix.name for ix in table.indexes}
+    assert "ix_intento_acceso_email_ip_cuando" in index_names
+
+
+def test_evento_seguridad_columns():
+    """evento_seguridad: id, cuando, actor, accion."""
+    table = SQLModel.metadata.tables["evento_seguridad"]
+    assert {"id", "cuando", "actor", "accion"} <= set(table.c.keys())
+
+
+def test_auth_relationships_are_declared():
+    """Usuario expone cliente, asignaciones_rol y relaciones hacia ordenes."""
     Usuario = auth_models.Usuario
-    Rol = auth_models.Rol
-    RolAsignacion = auth_models.RolAsignacion
+    AsignacionRol = auth_models.AsignacionRol
+    for attr in (
+        "cliente",
+        "asignaciones_rol",
+        "roles_otorgados",
+        "ordenes_asignadas",
+        "historiales_estado",
+        "movimientos_stock",
+        "historiales_precio",
+    ):
+        assert hasattr(Usuario, attr), f"Usuario missing relationship: {attr}"
+    assert hasattr(AsignacionRol, "usuario")
+    assert hasattr(AsignacionRol, "otorgante")
 
-    assert hasattr(Usuario, "rol_asignaciones") or hasattr(Usuario, "rol_asignacion")
-    assert hasattr(RolAsignacion, "usuario")
-    assert hasattr(RolAsignacion, "rol")
+
+def test_todas_las_fks_de_usuario_tienen_indice():
+    """Cada FK de las tablas de auth tiene indice (regla del proyecto)."""
+    table = SQLModel.metadata.tables["asignacion_rol"]
+    indexed_columns = {tuple(col.name for col in ix.columns) for ix in table.indexes}
+    assert ("usuario_id",) in indexed_columns
+    assert ("otorgada_por",) in indexed_columns

@@ -47,7 +47,7 @@ Organizadas por **épica** y luego por **historia de usuario** (formato US-NNN).
 **Para** registrarlo en el sistema
 
 **Criterios de aceptación**:
-- [ ] CA-1: Documento único entre vigentes (RN-01)
+- [ ] CA-1: Documento único (UNIQUE, RN-01)
 - [ ] CA-2: Solo recepcionista o administrador pueden crear clientes
 
 **Reglas relacionadas**: RN-01

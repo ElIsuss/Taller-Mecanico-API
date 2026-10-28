@@ -1,110 +1,162 @@
-"""Auth domain models: usuario, rol, rol_asignacion."""
+"""Auth domain models: usuario, asignacion_rol, intento_acceso, evento_seguridad."""
 
 from datetime import datetime
-from typing import Optional, List
+from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, text, column
+from sqlalchemy import CheckConstraint, DateTime, Index, text
 from sqlmodel import Field, Relationship, SQLModel
 
-
-class Rol(SQLModel, table=True):
-    """Catalogo de roles del sistema: RECEPCION, MECANICO, ADMIN, CLIENTE."""
-
-    __tablename__ = "rol"
-    __table_args__ = (
-        Index("ix_rol_nombre_uc", "nombre", unique=True),
-    )
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    nombre: str = Field(index=True, unique=True, nullable=False)
-    fecha_alta: datetime = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
-    )
-    fecha_baja: Optional[datetime] = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=True,
-        default=None,
-    )
-
-    rol_asignaciones: List["RolAsignacion"] = Relationship(
-        back_populates="rol",
-        sa_relationship_kwargs={"lazy": "raise"},
+if TYPE_CHECKING:
+    from app.modules.clientes.models import Cliente
+    from app.modules.ordenes.models import (
+        HistorialEstadoOrden,
+        HistorialPrecioRepuesto,
+        MovimientoStock,
+        OrdenTrabajo,
     )
 
 
 class Usuario(SQLModel, table=True):
-    """Usuario del sistema con email unico entre vigentes y opcional ficha de cliente."""
+    """Usuario del sistema; el email es unico y los roles viven en asignacion_rol."""
 
     __tablename__ = "usuario"
-    __table_args__ = (
-        Index("ix_usuario_email_uc", "email", unique=True, postgresql_where=text("fecha_baja IS NULL")),
-    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    email: str = Field(index=True, nullable=False)
+    email: str = Field(nullable=False, unique=True)
+    nombre: str = Field(nullable=False)
     password_hash: str = Field(nullable=False)
+    activo: bool = Field(default=True, nullable=False)
+    debe_cambiar_password: bool = Field(default=False, nullable=False)
     password_cambiada_en: Optional[datetime] = Field(
         sa_type=DateTime(timezone=True),
         nullable=True,
         default=None,
     )
-    fecha_alta: datetime = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
-    )
-    fecha_baja: Optional[datetime] = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=True,
-        default=None,
-    )
-    cliente_id: Optional[int] = Field(
-        default=None,
-        foreign_key="cliente.id",
-        nullable=True,
-        unique=True,
-    )
 
-    rol_asignaciones: List["RolAsignacion"] = Relationship(
+    cliente: Optional["Cliente"] = Relationship(
+        back_populates="usuario",
+        sa_relationship_kwargs={"lazy": "raise", "uselist": False},
+    )
+    asignaciones_rol: List["AsignacionRol"] = Relationship(
+        back_populates="usuario",
+        sa_relationship_kwargs={
+            "lazy": "raise",
+            "foreign_keys": "[AsignacionRol.usuario_id]",
+        },
+    )
+    roles_otorgados: List["AsignacionRol"] = Relationship(
+        back_populates="otorgante",
+        sa_relationship_kwargs={
+            "lazy": "raise",
+            "foreign_keys": "[AsignacionRol.otorgada_por]",
+        },
+    )
+    ordenes_asignadas: List["OrdenTrabajo"] = Relationship(
+        back_populates="mecanico",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    historiales_estado: List["HistorialEstadoOrden"] = Relationship(
+        back_populates="usuario",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    movimientos_stock: List["MovimientoStock"] = Relationship(
+        back_populates="usuario",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    historiales_precio: List["HistorialPrecioRepuesto"] = Relationship(
         back_populates="usuario",
         sa_relationship_kwargs={"lazy": "raise"},
     )
 
 
-class RolAsignacion(SQLModel, table=True):
-    """Asignacion de rol a usuario con vigencia (fecha_desde / fecha_hasta)."""
+class AsignacionRol(SQLModel, table=True):
+    """Asignacion de un rol a un usuario, con vigencia y revocacion (RN-03)."""
 
-    __tablename__ = "rol_asignacion"
+    __tablename__ = "asignacion_rol"
     __table_args__ = (
+        CheckConstraint(
+            "rol IN ('ADMIN', 'RECEPCION', 'MECANICO', 'CLIENTE')",
+            name="ck_asignacion_rol_rol_valido",
+        ),
         Index(
-            "ix_rol_asignacion_usuario_rol_abierta_uc",
+            "ix_asignacion_rol_usuario_rol_uc",
             "usuario_id",
-            "rol_id",
+            "rol",
             unique=True,
-            postgresql_where=text("fecha_hasta IS NULL"),
+            postgresql_where=text("revocada_en IS NULL"),
         ),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    usuario_id: int = Field(foreign_key="usuario.id", nullable=False)
-    rol_id: int = Field(foreign_key="rol.id", nullable=False)
-    fecha_desde: datetime = Field(
+    usuario_id: int = Field(foreign_key="usuario.id", nullable=False, index=True)
+    rol: str = Field(nullable=False)
+    desde: datetime = Field(
         sa_type=DateTime(timezone=True),
         nullable=False,
         sa_column_kwargs={"server_default": text("now()")},
     )
-    fecha_hasta: Optional[datetime] = Field(
+    vence_en: Optional[datetime] = Field(
         sa_type=DateTime(timezone=True),
         nullable=True,
         default=None,
     )
-    fecha_alta: datetime = Field(
+    revocada_en: Optional[datetime] = Field(
+        sa_type=DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
+    otorgada_por: Optional[int] = Field(
+        default=None,
+        foreign_key="usuario.id",
+        nullable=True,
+        index=True,
+    )
+
+    usuario: Optional[Usuario] = Relationship(
+        back_populates="asignaciones_rol",
+        sa_relationship_kwargs={
+            "lazy": "raise",
+            "foreign_keys": "[AsignacionRol.usuario_id]",
+        },
+    )
+    otorgante: Optional[Usuario] = Relationship(
+        back_populates="roles_otorgados",
+        sa_relationship_kwargs={
+            "lazy": "raise",
+            "foreign_keys": "[AsignacionRol.otorgada_por]",
+        },
+    )
+
+
+class IntentoAcceso(SQLModel, table=True):
+    """Registro de intentos de login para el limite de intentos fallidos (RN-08)."""
+
+    __tablename__ = "intento_acceso"
+    __table_args__ = (
+        Index("ix_intento_acceso_email_ip_cuando", "email", "ip", "cuando"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cuando: datetime = Field(
         sa_type=DateTime(timezone=True),
         nullable=False,
         sa_column_kwargs={"server_default": text("now()")},
     )
+    email: str = Field(nullable=False)
+    ip: str = Field(nullable=False)
+    exito: bool = Field(nullable=False)
 
-    usuario: Optional[Usuario] = Relationship(back_populates="rol_asignaciones", sa_relationship_kwargs={"lazy": "raise"})
-    rol: Optional[Rol] = Relationship(back_populates="rol_asignaciones", sa_relationship_kwargs={"lazy": "raise"})
+
+class EventoSeguridad(SQLModel, table=True):
+    """Bitacora de eventos de seguridad (quien hizo que)."""
+
+    __tablename__ = "evento_seguridad"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cuando: datetime = Field(
+        sa_type=DateTime(timezone=True),
+        nullable=False,
+        sa_column_kwargs={"server_default": text("now()")},
+    )
+    actor: str = Field(nullable=False)
+    accion: str = Field(nullable=False)

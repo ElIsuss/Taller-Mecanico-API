@@ -1,158 +1,262 @@
-"""Ordenes domain models: estado_orden, orden_trabajo, orden_item,
+"""Ordenes domain models: estado_orden, orden_trabajo, item_orden,
 historial_estado_orden, movimiento_stock, historial_precio_repuesto."""
 
 from datetime import datetime
-from typing import Optional
+from decimal import Decimal
+from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, text
-from sqlmodel import Field, SQLModel
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Numeric,
+    UniqueConstraint,
+    text,
+)
+from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from app.modules.auth.models import Usuario
+    from app.modules.repuestos.models import Repuesto
+    from app.modules.vehiculos.models import Vehiculo
 
 
 class EstadoOrden(SQLModel, table=True):
-    """Catalogo de estados de orden: PENDIENTE, EN_REPARACION, TERMINADA, CANCELADA."""
+    """Catalogo de estados de orden; la PK es el codigo legible (RN-19)."""
 
     __tablename__ = "estado_orden"
-    __table_args__ = (
-        Index("ix_estado_orden_nombre_uc", "nombre", unique=True),
-    )
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-    nombre: str = Field(index=True, unique=True, nullable=False)
-    fecha_alta: datetime = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
+    codigo: str = Field(primary_key=True)
+    descripcion: str = Field(nullable=False)
+    posicion: int = Field(nullable=False, unique=True)
+    es_final: bool = Field(default=False, nullable=False)
+
+    ordenes: List["OrdenTrabajo"] = Relationship(
+        back_populates="estado_actual",
+        sa_relationship_kwargs={"lazy": "raise"},
     )
-    fecha_baja: Optional[datetime] = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=True,
-        default=None,
+    historiales_desde: List["HistorialEstadoOrden"] = Relationship(
+        back_populates="desde_estado_rel",
+        sa_relationship_kwargs={
+            "lazy": "raise",
+            "foreign_keys": "[HistorialEstadoOrden.desde_estado]",
+        },
+    )
+    historiales_hasta: List["HistorialEstadoOrden"] = Relationship(
+        back_populates="hasta_estado_rel",
+        sa_relationship_kwargs={
+            "lazy": "raise",
+            "foreign_keys": "[HistorialEstadoOrden.hasta_estado]",
+        },
     )
 
 
 class OrdenTrabajo(SQLModel, table=True):
-    """Orden de trabajo vinculada a cliente, vehiculo y estado; mecanico asignado es cualquier usuario."""
+    """Orden de trabajo de un vehiculo, con mecanico opcional y total calculado."""
 
     __tablename__ = "orden_trabajo"
+    __table_args__ = (
+        CheckConstraint("total >= 0", name="ck_orden_trabajo_total_no_negativo"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    cliente_id: int = Field(foreign_key="cliente.id", nullable=False)
-    vehiculo_id: int = Field(foreign_key="vehiculo.id", nullable=False)
-    mecanico_asignado_id: Optional[int] = Field(
-        default=None, foreign_key="usuario.id", nullable=True
+    vehiculo_id: int = Field(foreign_key="vehiculo.id", nullable=False, index=True)
+    mecanico_id: Optional[int] = Field(
+        default=None,
+        foreign_key="usuario.id",
+        nullable=True,
+        index=True,
     )
-    estado_id: int = Field(foreign_key="estado_orden.id", nullable=False)
-    fecha_alta: datetime = Field(
+    estado: str = Field(foreign_key="estado_orden.codigo", nullable=False, index=True)
+    falla: str = Field(nullable=False)
+    creada_en: datetime = Field(
         sa_type=DateTime(timezone=True),
         nullable=False,
         sa_column_kwargs={"server_default": text("now()")},
     )
-    fecha_baja: Optional[datetime] = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=True,
-        default=None,
+    total: Decimal = Field(
+        sa_type=Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
     )
 
+    vehiculo: Optional["Vehiculo"] = Relationship(
+        back_populates="ordenes",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    mecanico: Optional["Usuario"] = Relationship(
+        back_populates="ordenes_asignadas",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    estado_actual: Optional["EstadoOrden"] = Relationship(
+        back_populates="ordenes",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    items: List["ItemOrden"] = Relationship(
+        back_populates="orden",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    historial_estados: List["HistorialEstadoOrden"] = Relationship(
+        back_populates="orden",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    movimientos_stock: List["MovimientoStock"] = Relationship(
+        back_populates="orden",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+
+
+class ItemOrden(SQLModel, table=True):
+    """Item de repuesto de una orden; el precio se copia del repuesto (RN-10)."""
+
+    __tablename__ = "item_orden"
     __table_args__ = (
-        Index("ix_orden_trabajo_estado_id", "estado_id"),
-        Index("ix_orden_trabajo_cliente_id", "cliente_id"),
-        Index("ix_orden_trabajo_vehiculo_id", "vehiculo_id"),
-        Index("ix_orden_trabajo_mecanico_asignado_id", "mecanico_asignado_id"),
+        CheckConstraint("cantidad > 0", name="ck_item_orden_cantidad_positiva"),
+        CheckConstraint(
+            "precio_unitario > 0",
+            name="ck_item_orden_precio_unitario_positivo",
+        ),
+        UniqueConstraint(
+            "orden_id",
+            "repuesto_id",
+            name="uq_item_orden_orden_repuesto",
+        ),
     )
-
-
-class OrdenItem(SQLModel, table=True):
-    """Item de repuesto de una orden de trabajo."""
-
-    __tablename__ = "orden_item"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    orden_trabajo_id: int = Field(foreign_key="orden_trabajo.id", nullable=False)
-    repuesto_id: int = Field(foreign_key="repuesto.id", nullable=False)
+    orden_id: int = Field(foreign_key="orden_trabajo.id", nullable=False, index=True)
+    repuesto_id: int = Field(foreign_key="repuesto.id", nullable=False, index=True)
     cantidad: int = Field(nullable=False)
-    precio_unitario: float = Field(nullable=False)
-    fecha_alta: datetime = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
-    )
-    fecha_baja: Optional[datetime] = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=True,
-        default=None,
-    )
+    precio_unitario: Decimal = Field(sa_type=Numeric(10, 2), nullable=False)
 
-    __table_args__ = (
-        Index("ix_orden_item_orden_trabajo_id", "orden_trabajo_id"),
-        Index("ix_orden_item_repuesto_id", "repuesto_id"),
+    orden: Optional["OrdenTrabajo"] = Relationship(
+        back_populates="items",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    repuesto: Optional["Repuesto"] = Relationship(
+        back_populates="items_orden",
+        sa_relationship_kwargs={"lazy": "raise"},
     )
 
 
 class HistorialEstadoOrden(SQLModel, table=True):
-    """Historial de cambios de estado de una orden (solo agregado, protegido por trigger RN-15)."""
+    """Historial de cambios de estado (solo agregado, RN-15)."""
 
     __tablename__ = "historial_estado_orden"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    orden_trabajo_id: int = Field(foreign_key="orden_trabajo.id", nullable=False)
-    estado_id: int = Field(foreign_key="estado_orden.id", nullable=False)
-    fecha_cambio: datetime = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
+    orden_id: int = Field(foreign_key="orden_trabajo.id", nullable=False, index=True)
+    desde_estado: Optional[str] = Field(
+        default=None,
+        foreign_key="estado_orden.codigo",
+        nullable=True,
+        index=True,
     )
-    fecha_alta: datetime = Field(
+    hasta_estado: str = Field(
+        foreign_key="estado_orden.codigo",
+        nullable=False,
+        index=True,
+    )
+    usuario_id: int = Field(foreign_key="usuario.id", nullable=False, index=True)
+    cuando: datetime = Field(
         sa_type=DateTime(timezone=True),
         nullable=False,
         sa_column_kwargs={"server_default": text("now()")},
     )
 
-    __table_args__ = (
-        Index("ix_historial_estado_orden_orden_id", "orden_trabajo_id"),
-        Index("ix_historial_estado_orden_estado_id", "estado_id"),
+    orden: Optional["OrdenTrabajo"] = Relationship(
+        back_populates="historial_estados",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    desde_estado_rel: Optional["EstadoOrden"] = Relationship(
+        back_populates="historiales_desde",
+        sa_relationship_kwargs={
+            "lazy": "raise",
+            "foreign_keys": "[HistorialEstadoOrden.desde_estado]",
+        },
+    )
+    hasta_estado_rel: Optional["EstadoOrden"] = Relationship(
+        back_populates="historiales_hasta",
+        sa_relationship_kwargs={
+            "lazy": "raise",
+            "foreign_keys": "[HistorialEstadoOrden.hasta_estado]",
+        },
+    )
+    usuario: Optional["Usuario"] = Relationship(
+        back_populates="historiales_estado",
+        sa_relationship_kwargs={"lazy": "raise"},
     )
 
 
 class MovimientoStock(SQLModel, table=True):
-    """Movimiento de stock de un repuesto (alta, reposicion, terminacion)."""
+    """Movimiento de stock (solo agregado, RN-14 y RN-15)."""
 
     __tablename__ = "movimiento_stock"
+    __table_args__ = (
+        CheckConstraint("cantidad <> 0", name="ck_movimiento_stock_cantidad_no_cero"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    repuesto_id: int = Field(foreign_key="repuesto.id", nullable=False)
-    tipo: str = Field(nullable=False)  # alta | reposicion | terminacion
+    repuesto_id: int = Field(foreign_key="repuesto.id", nullable=False, index=True)
+    orden_id: Optional[int] = Field(
+        default=None,
+        foreign_key="orden_trabajo.id",
+        nullable=True,
+        index=True,
+    )
+    usuario_id: int = Field(foreign_key="usuario.id", nullable=False, index=True)
     cantidad: int = Field(nullable=False)
-    fecha_alta: datetime = Field(
+    motivo: str = Field(nullable=False)
+    cuando: datetime = Field(
         sa_type=DateTime(timezone=True),
         nullable=False,
         sa_column_kwargs={"server_default": text("now()")},
     )
 
-    __table_args__ = (
-        Index("ix_movimiento_stock_repuesto_id", "repuesto_id"),
+    repuesto: Optional["Repuesto"] = Relationship(
+        back_populates="movimientos_stock",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    orden: Optional["OrdenTrabajo"] = Relationship(
+        back_populates="movimientos_stock",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    usuario: Optional["Usuario"] = Relationship(
+        back_populates="movimientos_stock",
+        sa_relationship_kwargs={"lazy": "raise"},
     )
 
 
 class HistorialPrecioRepuesto(SQLModel, table=True):
-    """Historial de cambios de precio de un repuesto (solo agregado, protegido por trigger RN-15)."""
+    """Historial de cambios de precio (solo agregado, RN-15 y RN-20)."""
 
     __tablename__ = "historial_precio_repuesto"
+    __table_args__ = (
+        CheckConstraint(
+            "precio_nuevo > 0",
+            name="ck_historial_precio_nuevo_positivo",
+        ),
+        CheckConstraint(
+            "precio_nuevo <> precio_anterior",
+            name="ck_historial_precio_cambio",
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    repuesto_id: int = Field(foreign_key="repuesto.id", nullable=False)
-    precio_anterior: float = Field(nullable=False)
-    precio_nuevo: float = Field(nullable=False)
-    fecha_cambio: datetime = Field(
-        sa_type=DateTime(timezone=True),
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
-    )
-    fecha_alta: datetime = Field(
+    repuesto_id: int = Field(foreign_key="repuesto.id", nullable=False, index=True)
+    usuario_id: int = Field(foreign_key="usuario.id", nullable=False, index=True)
+    precio_anterior: Decimal = Field(sa_type=Numeric(10, 2), nullable=False)
+    precio_nuevo: Decimal = Field(sa_type=Numeric(10, 2), nullable=False)
+    cuando: datetime = Field(
         sa_type=DateTime(timezone=True),
         nullable=False,
         sa_column_kwargs={"server_default": text("now()")},
     )
 
-    __table_args__ = (
-        Index("ix_historial_precio_repuesto_repuesto_id", "repuesto_id"),
+    repuesto: Optional["Repuesto"] = Relationship(
+        back_populates="historiales_precio",
+        sa_relationship_kwargs={"lazy": "raise"},
+    )
+    usuario: Optional["Usuario"] = Relationship(
+        back_populates="historiales_precio",
+        sa_relationship_kwargs={"lazy": "raise"},
     )

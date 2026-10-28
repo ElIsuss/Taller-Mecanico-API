@@ -108,17 +108,19 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
   - `knowledge-base/04_modelo_de_datos.md` (§Dominios)
 
 ### [C-02] `modelos-relaciones-migraciones`
-- **Estado**: `[ ]` pendiente
+- **Estado**: `[x]` completo (validado contra PostgreSQL 16)
 - **Puntos**: 14 | **Orden sugerido**: 2
 - **Scope**:
-  - Modelos SQLModel: `usuario`, `rol`, `rol_asignacion`, `cliente`, `vehiculo`, `repuesto`, `estado_orden`, `orden_trabajo`, `orden_item`
+  - Modelos SQLModel según TP Cap1a6: `usuario`, `asignacion_rol`, `intento_acceso`, `evento_seguridad`, `cliente`, `vehiculo`, `repuesto`, `estado_orden`, `orden_trabajo`, `item_orden`
   - Tablas de solo-agregado: `historial_estado_orden`, `movimiento_stock`, `historial_precio_repuesto`
-  - Índices únicos parciales (`postgresql_where`) sobre los campos de unicidad vigentes: email de usuario, documento de cliente, patente de vehículo y código de repuesto (RN-01)
-  - FK `orden_trabajo.estado_orden_id` al catálogo `estado_orden` (sin CHECK constraint, RN-19)
-  - Navegación en ambos extremos de las relaciones; `Usuario.cliente` devuelve objeto (1:1), no lista
+  - Roles como CHECK en `asignacion_rol.rol` (sin tabla `rol`); `estado_orden` con PK `codigo`
+  - Índices únicos parciales: `vehiculo.patente` y `repuesto.codigo` (`borrado_en IS NULL`); `asignacion_rol (usuario_id, rol)` (`revocada_en IS NULL`); email y documento UNIQUE simple
+  - FK `cliente.usuario_id` → `usuario.id` (1:1 opcional) y `orden_trabajo.mecanico_id` → `usuario.id` (opcional)
+  - Dinero `NUMERIC(10,2)`/`NUMERIC(12,2)` mapeado a `Decimal`; todas las fechas `timestamptz`
+  - Navegación en ambos extremos de las relaciones con `lazy="raise"`
   - Esquema creado exclusivamente con Alembic (sin `create_all`)
   - 2 migraciones: una autogenerate y una escrita a mano (disparador solo-agregado para RN-15)
-  - `seed.py` carga los 4 estados del catálogo `estado_orden`, los 4 roles y el administrador inicial
+  - `seed.py` carga los estados del catálogo `estado_orden` y el administrador inicial (roles son CHECK)
 - **Dependencias**: `C-01`
 - **Governance**: CRITICO (modelos core que todo lo demás referencia)
 - **Leer antes**:
@@ -133,7 +135,7 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
 > Nota: `C-03` y `C-04` pueden ejecutarse en paralelo tras `C-02` (GATE 2). `C-05` requiere `C-04`.
 
 ### [C-03] `contratos-y-crud`
-- **Estado**: `[ ]` pendiente
+- **Estado**: `[x]` completado
 - **Puntos**: 10 | **Orden sugerido**: 3
 - **Scope**:
   - Schemas de contrato separados de los modelos (Pydantic) con `extra="forbid"`
@@ -185,7 +187,7 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
 - **Leer antes**:
   - `knowledge-base/03_actores_y_roles.md` (§Matriz de permisos RBAC)
   - `knowledge-base/05_reglas_de_negocio.md` (§RN-03 a RN-07)
-  - `knowledge-base/04_modelo_de_datos.md` (§usuario, rol_asignacion)
+  - `knowledge-base/04_modelo_de_datos.md` (§usuario, §asignacion_rol)
 
 ---
 

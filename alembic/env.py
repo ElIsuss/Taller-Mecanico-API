@@ -6,12 +6,7 @@ from sqlmodel import SQLModel
 
 # Import every model module so that SQLModel.metadata is fully populated
 # before Alembic inspects it (autogenerate + online migrations).
-from app.modules.auth.models import *  # noqa: F401,F403
-from app.modules.clientes.models import *  # noqa: F401,F403
-from app.modules.vehiculos.models import *  # noqa: F401,F403
-from app.modules.repuestos.models import *  # noqa: F401,F403
-from app.modules.ordenes.models import *  # noqa: F401,F403
-from app.modules.roles.models import *  # noqa: F401,F403
+from app.core.models import *  # noqa: F401,F403
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

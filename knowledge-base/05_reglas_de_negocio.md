@@ -4,7 +4,7 @@ Cada regla tiene un código único `RN-XX-NN` para trazabilidad.
 
 ## Dominio: Unicidad (RN-01)
 
-- **RN-01**: Unicidad de email, documento, patente y código entre los vigentes (correo de usuario, documento de cliente, patente de vehículo y código de repuesto, solo entre los que no están dados de baja).
+- **RN-01**: Unicidad según el TP: email de usuario y documento de cliente son únicos de forma absoluta (UNIQUE); patente de vehículo y código de repuesto son únicos solo entre los vigentes (`borrado_en IS NULL`, índice único parcial).
 
 ## Dominio: Auto-registro de clientes (RN-02)
 
