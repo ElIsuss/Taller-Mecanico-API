@@ -12,13 +12,21 @@ class RepuestoCreate(BaseModel):
     codigo: str = Field(min_length=1, max_length=50)
     descripcion: str = Field(min_length=1, max_length=200)
     precio: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
-    stock: int = Field(default=0, ge=0)
+    stock_inicial: int = Field(default=0, ge=0)
+    usuario_id: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _stock_inicial_requiere_actor(self) -> "RepuestoCreate":
+        if self.stock_inicial > 0 and self.usuario_id is None:
+            raise ValueError(
+                "usuario_id es obligatorio cuando el stock inicial es mayor a cero"
+            )
+        return self
 
 
 class RepuestoUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    codigo: str | None = Field(default=None, min_length=1, max_length=50)
     descripcion: str | None = Field(default=None, min_length=1, max_length=200)
     precio: Decimal | None = Field(
         default=None, gt=0, max_digits=10, decimal_places=2

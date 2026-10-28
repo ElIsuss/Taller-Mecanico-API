@@ -1,0 +1,48 @@
+﻿@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+
+### C-16: PATCH parcial -> sólo cambia lo enviado
+PATCH {{host}}/repuestos/2
+Content-Type: application/json
+
+{ "descripcion": "Pastillas de freno delanteras", "usuario_id": 3 }
+
+### C-16: PATCH del stock -> 422
+PATCH {{host}}/repuestos/2
+Content-Type: application/json
+
+{ "stock": 99 }
+
+### C-18: cambiar el precio -> 200 y una línea en /precios
+PATCH {{host}}/repuestos/1
+Content-Type: application/json
+
+{ "precio": "9000.00", "usuario_id": 3 }
+
+###
+GET {{host}}/repuestos/1/precios
+
+### C-18: cambiar sólo la descripción -> 200 y no agrega historial
+PATCH {{host}}/repuestos/1
+Content-Type: application/json
+
+{ "descripcion": "Filtro de aceite premium", "usuario_id": 3 }
+
+###
+GET {{host}}/repuestos/1/precios
+
+### C-19: dar de baja el vehículo 2 (sin órdenes) y registrar su patente para otro cliente -> 204 y 201
+DELETE {{host}}/vehiculos/2
+
+###
+POST {{host}}/clientes/2/vehiculos
+Content-Type: application/json
+
+{ "patente": "EF456GH", "marca": "Ford", "modelo": "Focus", "anio": 2018 }
+
+### C-19: segunda patente vigente igual -> 409
+POST {{host}}/vehiculos
+Content-Type: application/json
+
+{ "cliente_id": 1, "patente": "EF456GH", "marca": "Otra", "modelo": "Otro", "anio": 2022 }

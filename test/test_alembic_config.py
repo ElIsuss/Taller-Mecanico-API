@@ -1,4 +1,4 @@
-"""Tests for Alembic infrastructure (C-02 tasks 1.1, 1.2)."""
+﻿"""Tests for Alembic infrastructure (C-02 tasks 1.1, 1.2)."""
 
 import os
 import subprocess
@@ -12,13 +12,11 @@ from sqlmodel import SQLModel
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# Import every model module so SQLModel.metadata is fully populated (mirrors alembic/env.py).
-import app.modules.auth.models  # noqa: F401
+# Import every model module so SQLModel.metadata is fully populated (mirrors migrations/env.py).
 import app.modules.clientes.models  # noqa: F401
-import app.modules.vehiculos.models  # noqa: F401
-import app.modules.repuestos.models  # noqa: F401
 import app.modules.ordenes.models  # noqa: F401
-import app.modules.roles.models  # noqa: F401
+import app.modules.repuestos.models  # noqa: F401
+import app.modules.usuarios.models  # noqa: F401
 
 
 def test_alembic_ini_exists():
@@ -27,8 +25,8 @@ def test_alembic_ini_exists():
 
 
 def test_alembic_env_exists():
-    """alembic/env.py must exist."""
-    assert (PROJECT_ROOT / "alembic" / "env.py").is_file()
+    """migrations/env.py must exist."""
+    assert (PROJECT_ROOT / "migrations" / "env.py").is_file()
 
 
 def _database_url():

@@ -32,10 +32,10 @@ RepuestoId = Annotated[int, Path(ge=1)]
 async def listar_repuestos(
     session: SessionDep,
     params: Annotated[PaginaParams, Depends()],
-    busqueda: Annotated[str | None, Query(max_length=200)] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
 ) -> Pagina[RepuestoRead]:
     repuestos, total = await service.listar_repuestos(
-        session, params.offset, params.size, busqueda
+        session, params.offset, params.size, q
     )
     return construir_pagina(
         [RepuestoRead.model_validate(r) for r in repuestos], total, params
@@ -73,7 +73,7 @@ async def obtener_repuesto(
     "/{repuesto_id}",
     response_model=RepuestoRead,
     summary="Actualizar repuesto",
-    description="Actualiza código, descripción o precio; el stock solo cambia por reposición.",
+    description="Actualiza la descripción o el precio; el stock solo cambia por reposición.",
 )
 async def actualizar_repuesto(
     repuesto_id: RepuestoId, data: RepuestoUpdate, session: SessionDep
@@ -95,9 +95,9 @@ async def borrar_repuesto(repuesto_id: RepuestoId, session: SessionDep) -> Respo
 
 
 @router.post(
-    "/{repuesto_id}/reposiciones",
+    "/{repuesto_id}/reponer",
     response_model=MovimientoStockRead,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
     summary="Reponer stock",
     description="Registra un movimiento positivo y aumenta el stock del repuesto.",
 )
@@ -111,7 +111,28 @@ async def reponer_stock(
 
 
 @router.get(
-    "/{repuesto_id}/historial-precios",
+    "/{repuesto_id}/movimientos",
+    response_model=Pagina[MovimientoStockRead],
+    summary="Movimientos de stock",
+    description="Devuelve los movimientos del repuesto, del más reciente al más antiguo.",
+)
+async def listar_movimientos(
+    repuesto_id: RepuestoId,
+    session: SessionDep,
+    params: Annotated[PaginaParams, Depends()],
+) -> Pagina[MovimientoStockRead]:
+    movimientos, total = await service.listar_movimientos(
+        session, repuesto_id, params.offset, params.size
+    )
+    return construir_pagina(
+        [MovimientoStockRead.model_validate(m) for m in movimientos],
+        total,
+        params,
+    )
+
+
+@router.get(
+    "/{repuesto_id}/precios",
     response_model=Pagina[HistorialPrecioRead],
     summary="Historial de precios",
     description="Devuelve los cambios de precio del repuesto, del más reciente al más antiguo.",

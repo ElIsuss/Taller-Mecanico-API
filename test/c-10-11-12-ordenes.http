@@ -1,0 +1,54 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+# El seed deja al usuario 4 (mecanico@example.com) y la orden 2 en EN_REPARACION.
+
+### C-10: alta de orden con dos ítems -> 201, precios copiados, total e historial
+POST {{host}}/ordenes
+Content-Type: application/json
+
+{
+  "vehiculo_id": 1,
+  "falla": "Ruido en el motor",
+  "usuario_id": 3,
+  "items": [
+    { "repuesto_id": 1, "cantidad": 2 },
+    { "repuesto_id": 2, "cantidad": 1 }
+  ]
+}
+
+### C-10: repuesto inexistente -> 409 y la orden no queda creada
+POST {{host}}/ordenes
+Content-Type: application/json
+
+{
+  "vehiculo_id": 1,
+  "falla": "Falla",
+  "usuario_id": 3,
+  "items": [{ "repuesto_id": 999999, "cantidad": 1 }]
+}
+
+### C-11: terminar la orden 2 (pide 4 bujías y hay 2) -> 409 sin cambios
+POST {{host}}/ordenes/2/terminar
+Content-Type: application/json
+
+{ "usuario_id": 4 }
+
+### C-12: reponer 2 bujías y terminar la orden 2 -> 200
+POST {{host}}/repuestos/3/reponer
+Content-Type: application/json
+
+{ "cantidad": 2, "motivo": "compra", "usuario_id": 3 }
+
+###
+POST {{host}}/ordenes/2/terminar
+Content-Type: application/json
+
+{ "usuario_id": 4 }
+
+### C-12: stock y movimientos resultantes
+GET {{host}}/repuestos/3
+###
+GET {{host}}/repuestos/3/movimientos
+###
+GET {{host}}/ordenes/2

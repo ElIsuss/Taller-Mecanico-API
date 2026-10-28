@@ -38,8 +38,8 @@ async def test_size_mayor_a_cien_es_rechazado():
     assert response.status_code == 422
 
 
-def test_calcular_pages_lista_vacia_es_cero():
-    assert calcular_pages(0, 20) == 0
+def test_calcular_pages_lista_vacia_es_una():
+    assert calcular_pages(0, 20) == 1
 
 
 def test_calcular_pages_redondea_hacia_arriba():
@@ -64,4 +64,4 @@ def test_construir_pagina_rechaza_pagina_fuera_de_rango():
 def test_construir_pagina_vacia_permite_primera_pagina():
     params = PaginaParams(page=1, size=20)
     pagina = construir_pagina([], total=0, params=params)
-    assert pagina.pages == 0
+    assert pagina.pages == 1

@@ -16,7 +16,7 @@ from app.modules.ordenes.schemas import (
     ItemOrdenCreate,
 )
 from app.modules.repuestos.schemas import RepuestoRead, RepuestoUpdate
-from app.modules.vehiculos.schemas import VehiculoCreate, VehiculoRead
+from app.modules.clientes.schemas import VehiculoCreate, VehiculoRead
 
 
 def test_cliente_create_rechaza_campos_desconocidos():

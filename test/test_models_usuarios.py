@@ -1,13 +1,13 @@
-"""Tests for app.modules.auth.models (C-02 task 2.1)."""
+﻿"""Tests for app.modules.usuarios.models (C-02 task 2.1)."""
 
 from sqlmodel import SQLModel
 
-import app.modules.auth.models as auth_models
+import app.modules.usuarios.models as usuarios_models
 
 
 def test_auth_module_imports_without_errors():
-    """The auth models module must import cleanly (task 2.1 acceptance)."""
-    assert auth_models is not None
+    """The usuarios models module must import cleanly (task 2.1 acceptance)."""
+    assert usuarios_models is not None
 
 
 def test_usuario_model_has_expected_columns():
@@ -97,8 +97,8 @@ def test_evento_seguridad_columns():
 
 def test_auth_relationships_are_declared():
     """Usuario expone cliente, asignaciones_rol y relaciones hacia ordenes."""
-    Usuario = auth_models.Usuario
-    AsignacionRol = auth_models.AsignacionRol
+    Usuario = usuarios_models.Usuario
+    AsignacionRol = usuarios_models.AsignacionRol
     for attr in (
         "cliente",
         "asignaciones_rol",

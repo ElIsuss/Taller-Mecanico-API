@@ -96,6 +96,34 @@ async def test_cliente_con_vehiculos_no_se_borra(client, seed):
 
 
 @pytest.mark.asyncio
+async def test_vehiculo_anidado_en_cliente(client, seed):
+    cliente = await seed.cliente(nombre="Ana Pérez")
+
+    creado = await client.post(
+        f"/clientes/{cliente.id}/vehiculos",
+        json={
+            "patente": "AB123CD",
+            "marca": "Toyota",
+            "modelo": "Corolla",
+            "anio": 2020,
+        },
+    )
+    assert creado.status_code == 201
+    assert creado.json()["cliente_id"] == cliente.id
+
+    detalle = await client.get(f"/clientes/{cliente.id}")
+    assert detalle.status_code == 200
+    assert len(detalle.json()["vehiculos"]) == 1
+    assert detalle.json()["vehiculos"][0]["patente"] == "AB123CD"
+
+    inexistente = await client.post(
+        "/clientes/999999/vehiculos",
+        json={"patente": "XX000XX", "marca": "M", "modelo": "M", "anio": 2020},
+    )
+    assert inexistente.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_pagina_fuera_de_rango_devuelve_422(client, seed):
     await seed.cliente()
     response = await client.get("/clientes?page=2&size=20")

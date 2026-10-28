@@ -12,10 +12,7 @@ async def test_liveness():
 
 
 @pytest.mark.asyncio
-async def test_readiness():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        response = await ac.get("/health/ready")
+async def test_readiness(client):
+    response = await client.get("/health/ready")
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "ready"
-    assert "database" in data
+    assert response.json() == {"status": "ready", "database": "connected"}

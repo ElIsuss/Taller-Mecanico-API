@@ -1,4 +1,4 @@
-# contratos-api Specification
+﻿# contratos-api Specification
 
 ## Purpose
 
@@ -29,11 +29,15 @@ El sistema SHALL actualizar en un PATCH únicamente los campos presentes en el c
 - **THEN** la API responde 200 sin modificar el cliente
 
 ### Requirement: Paginación uniforme
-El sistema SHALL devolver los listados con el envoltorio `{items, total, page, size, pages}`, con `page` desde 1, `size` entre 1 y 100 (default 20) y `pages = ceil(total / size)` (0 si no hay elementos).
+El sistema SHALL devolver los listados con el envoltorio `{items, total, page, size, pages}`, con `page` desde 1, `size` entre 1 y 100 (default 20) y `pages = max(1, ceil(total / size))`; con `total = 0` se devuelve una página vacía (`pages = 1`).
 
 #### Scenario: Primera página
 - **WHEN** se solicita `GET /clientes?page=1&size=20` con 5 clientes
 - **THEN** la respuesta incluye los 5 ítems, `total = 5`, `page = 1`, `size = 20` y `pages = 1`
+
+#### Scenario: Listado vacío
+- **WHEN** se solicita `GET /clientes?page=1&size=20` sin clientes
+- **THEN** la respuesta incluye `items = []`, `total = 0` y `pages = 1`
 
 #### Scenario: Página fuera de rango
 - **WHEN** se solicita una página mayor que `pages` (o mayor que 1 con `total = 0`)

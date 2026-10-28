@@ -1,9 +1,9 @@
-"""Tests for app.modules.vehiculos.models (C-02 task 2.3)."""
+﻿"""Tests for app.modules.clientes.models (C-02 task 2.3)."""
 
 from sqlalchemy import inspect
 from sqlmodel import SQLModel
 
-import app.modules.vehiculos.models as vehiculos_models
+import app.modules.clientes.models as vehiculos_models
 
 def test_vehiculos_module_imports_without_errors():
     """The vehiculos models module must import cleanly (task 2.3 acceptance)."""

@@ -1,4 +1,4 @@
-"""Auth domain models: usuario, asignacion_rol, intento_acceso, evento_seguridad."""
+"""Usuarios domain models: usuario, asignacion_rol, intento_acceso, evento_seguridad."""
 
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
@@ -8,11 +8,10 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from app.modules.clientes.models import Cliente
-    from app.modules.ordenes.models import (
-        HistorialEstadoOrden,
+    from app.modules.ordenes.models import HistorialEstadoOrden, OrdenTrabajo
+    from app.modules.repuestos.models import (
         HistorialPrecioRepuesto,
         MovimientoStock,
-        OrdenTrabajo,
     )
 
 
