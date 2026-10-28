@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "taller_mecanico"
     POSTGRES_PORT: int = 5432
     
+    DEBUG: bool = False
     DATABASE_URL: str | None = None
 
     @computed_field

@@ -1,6 +1,12 @@
 from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
 from app.core.config import settings
+
+# Metadata de SQLModel expuesto hacia Alembic (autogenerate).
+# Los modelos deben importarse (p.ej. desde alembic/env.py) para que
+# SQLModel.metadata quede poblado con todas las tablas del proyecto.
+SQLModel_metadata = SQLModel.metadata
 
 
 def create_engine_and_session_maker():
