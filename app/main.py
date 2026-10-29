@@ -4,6 +4,8 @@ import app.core.models  # noqa: F401  (registra todos los modelos y relaciones)
 from app.core.config import settings
 from app.core.database import create_engine_and_session_maker
 from app.core.exceptions import register_exception_handlers
+from app.core.security import set_access_token_cookie, delete_access_token_cookie
+from app.modules.auth.router import router as auth_router
 from app.modules.clientes.router import router as clientes_router
 from app.modules.ordenes.router import router as ordenes_router
 from app.modules.ordenes.router import router_estados
@@ -31,6 +33,7 @@ app = FastAPI(
 
 register_exception_handlers(app)
 
+app.include_router(auth_router)
 app.include_router(clientes_router)
 app.include_router(vehiculos_router)
 app.include_router(repuestos_router)
