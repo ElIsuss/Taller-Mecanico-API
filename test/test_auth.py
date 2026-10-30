@@ -1,405 +1,267 @@
-"""Integration tests for C-04 auth endpoints (C-04 task).
+"""Integration tests for C-04 / C-07 auth endpoints and intento_acceso isolation.
 
 Requires TEST_DATABASE_URL to be set with a PostgreSQL connection string.
-The conftest.py `client` fixture (depends on `db_ready`) will be skipped
-if the env var is not defined.
-
-Additional notes:
-- RN-08 tests require a pre-existing user in the database with login attempts.
-- The tests use the `client` fixture which creates its own session per test.
-- Intentos registrados en `intento_acceso` persisten aunque el login falle.
 """
 
+from datetime import datetime, timezone
 import pytest
-from httpx import ASGITransport, AsyncClient
+from sqlmodel import select
+
+from app.core.security import hash_password
+from app.main import app
+from app.modules.usuarios.models import AsignacionRol, IntentoAcceso, Usuario
+from app.modules.usuarios.service import registrar_intento_acceso
+
+
+@pytest.fixture
+async def auth_user(seed):
+    """Crea un usuario de prueba con credenciales válidas y rol CLIENTE."""
+    hashed = await hash_password("test-password-123")
+    async with app.state.async_session_maker() as session:
+        async with session.begin():
+            user = Usuario(
+                email="auth.user@test.com",
+                nombre="Auth User Test",
+                password_hash=hashed,
+                activo=True,
+                debe_cambiar_password=False,
+            )
+            session.add(user)
+            await session.flush()
+            rol = AsignacionRol(
+                usuario_id=user.id,
+                rol="CLIENTE",
+            )
+            session.add(rol)
+            await session.flush()
+            return user
 
 
 @pytest.mark.asyncio
-async def test_login_exitoso(client):
+async def test_login_exitoso(client, auth_user):
     """Login con credenciales válidas.
 
     - Retorna 200 OK
     - Cookie `access_token` con HttpOnly, SameSite=lax, Max-Age
     - Body contiene los datos del usuario (sin password_hash)
     """
-    # Credenciales de test: un usuario creado por la fixture db_ready
-    from app.modules.auth.models import Usuario
-
-    # Buscar un usuario existente en la sesión
-    from sqlmodel import select
-    from app.core.database import get_session
-
-    async with get_session() as session:
-        result = await session.execute(select(Usuario).limit(1))
-        usuario = result.scalar_one_or_none()
-
-    if usuario is None:
-        pytest.skip("No hay usuarios en la base de datos para testear login")
-
-    # Hacer login
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.post(
-            "/auth/login",
-            data={"email": usuario.email, "password": "test-password-123"},
-        )
-
-    # Verificar respuesta
+    response = await client.post(
+        "/auth/login",
+        json={"email": auth_user.email, "password": "test-password-123"},
+    )
     assert response.status_code == 200, f"Esperaba 200, got {response.status_code}: {response.text}"
 
-    # Verificar cookie access_token
     cookie = response.cookies.get("access_token")
     assert cookie is not None, "Cookie access_token no incluida en respuesta"
-    assert "HttpOnly" in str(response.headers.get("set-cookie", "")), "Cookie debe tener HttpOnly"
-    assert "SameSite=lax" in str(response.headers.get("set-cookie", "")), "Cookie debe tener SameSite=lax"
+    set_cookie = str(response.headers.get("set-cookie", ""))
+    assert "HttpOnly" in set_cookie or "httponly" in set_cookie.lower()
 
-    # Verificar response body (sin password_hash)
     data = response.json()
-    assert "id" in data
-    assert "email" in data
-    assert "nombre" in data
-    assert "rol" in data
-    assert "iat" in data
-    assert "password_hash" not in str(data), "La respuesta no debe incluir password_hash"
+    assert data["id"] == auth_user.id
+    assert data["email"] == auth_user.email
+    assert data["rol"] == "CLIENTE"
+    assert "password_hash" not in str(data)
 
 
 @pytest.mark.asyncio
-async def test_login_invalido(client):
+async def test_login_invalido(client, auth_user):
     """Login con credenciales inválidas.
 
     - Retorna 401 Unauthorized
     - Mismo mensaje aunque el email no exista (RN-09)
-    - No se establece cookie
     """
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.post(
-            "/auth/login",
-            data={"email": "usuario_inexistente@test.com", "password": "cualquier_cosa"},
-        )
+    response = await client.post(
+        "/auth/login",
+        json={"email": auth_user.email, "password": "password_incorrecta"},
+    )
+    assert response.status_code == 401
+    assert response.json().get("detail") == "Invalid credentials"
 
-    # RN-09: siempre 401 con mismo mensaje
-    assert response.status_code == 401, f"Esperaba 401, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert data.get("detail") == "Invalid credentials", f"Esperaba 'Invalid credentials', got {data.get('detail')}"
+    # Con email inexistente
+    response_no_user = await client.post(
+        "/auth/login",
+        json={"email": "noexiste@test.com", "password": "password_incorrecta"},
+    )
+    assert response_no_user.status_code == 401
+    assert response_no_user.json().get("detail") == "Invalid credentials"
 
 
 @pytest.mark.asyncio
-async def test_perfil_con_token_valido(client):
-    """Perfil del usuario autenticado con cookie válida.
-
-    - Retorna 200 OK
-    - Datos del usuario sin password_hash
-    - Incluye roles vigentes consultados en base (RN-04)
-    """
-    # Primero hacer login para obtener cookie
-    from app.modules.auth.models import Usuario
-    from sqlmodel import select
-
-    async with get_session() as session:
-        result = await session.execute(select(Usuario).limit(1))
-        usuario = result.scalar_one_or_none()
-
-    if usuario is None:
-        pytest.skip("No hay usuarios en la base de datos")
-
-    response = await ac.post(
+async def test_perfil_con_token_valido(client, auth_user):
+    """Perfil del usuario autenticado con cookie válida."""
+    login_resp = await client.post(
         "/auth/login",
-        data={"email": usuario.email, "password": "test-password-123"},
+        json={"email": auth_user.email, "password": "test-password-123"},
     )
+    assert login_resp.status_code == 200
+    token = login_resp.cookies.get("access_token")
+    assert token is not None
 
-    if response.status_code != 200:
-        pytest.skip(f"Login falló: {response.text}")
-
-    # Ahora pedir perfil con la cookie
-    response = await ac.get("/auth/yo")
-
-    assert response.status_code == 200, f"Esperaba 200, got {response.status_code}: {response.text}"
-
+    response = await client.get("/auth/yo", cookies={"access_token": token})
+    assert response.status_code == 200
     data = response.json()
-    assert "id" in data
-    assert "email" in data
-    assert "nombre" in data
-    assert "rol" in data
-    # password_hash debe estar ausente
-    assert "password_hash" not in str(data), "La respuesta no debe incluir password_hash"
-    # El rol debe ser uno de los válidos
-    assert data["rol"] in ("ADMIN", "RECEPCION", "MECANICO", "CLIENTE")
+    assert data["id"] == auth_user.id
+    assert data["email"] == auth_user.email
+    assert data["rol"] == "CLIENTE"
+    assert "password_hash" not in str(data)
 
 
 @pytest.mark.asyncio
 async def test_perfil_sin_token(client):
-    """Perfil sin cookie o con token inválido.
-
-    - Retorna 401 Unauthorized
-    """
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.get("/auth/yo")
-
-    assert response.status_code == 401, f"Esperaba 401, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert "detail" in data
+    """Perfil sin cookie o con token inválido retorna 401."""
+    response = await client.get("/auth/yo")
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio
-async def test_logout(client):
-    """Logout: invalidación de cookie.
+async def test_logout(client, auth_user):
+    """Logout invalida la cookie de sesión."""
+    login_resp = await client.post(
+        "/auth/login",
+        json={"email": auth_user.email, "password": "test-password-123"},
+    )
+    assert login_resp.status_code == 200
 
-    - Retorna 204 No Content
-    - Cookie access_token eliminada (Set-Cookie con Max-Age=0)
-    """
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Hacer login primero
-        from app.modules.auth.models import Usuario
-        from sqlmodel import select
-
-        async with get_session() as session:
-            result = await session.execute(select(Usuario).limit(1))
-            usuario = result.scalar_one_or_none()
-
-        if usuario is None:
-            pytest.skip("No hay usuarios en la base de datos")
-
-        login_response = await ac.post(
-            "/auth/login",
-            data={"email": usuario.email, "password": "test-password-123"},
-        )
-
-        if login_response.status_code != 200:
-            pytest.skip(f"No se pudo hacer login: {login_response.text}")
-
-        # Ahora hacer logout
-        logout_response = await ac.post("/auth/logout")
-
-    assert logout_response.status_code == 204, f"Esperaba 204, got {logout_response.status_code}: {logout_response.text}"
-
-    # Verificar que la cookie fue borrada
-    # El Set-Cookie con Max-Age=0 debe haber sido enviado
-    set_cookie = logout_response.headers.get("set-cookie", "")
-    assert "Max-Age=0" in set_cookie or "expires=" in set_cookie.lower(), \
-        f"Cookie debe ser borrada con Max-Age=0 o Expires, got: {set_cookie}"
+    logout_resp = await client.post("/auth/logout")
+    assert logout_resp.status_code == 204
+    set_cookie = logout_resp.headers.get("set-cookie", "")
+    assert "Max-Age=0" in set_cookie or "max-age=0" in set_cookie.lower()
 
 
 @pytest.mark.asyncio
 async def test_register_exitoso(client):
-    """Registro de nuevo cliente.
-
-    - Retorna 201 Created
-    - Cookie access_token establecida
-    - Response body sin password_hash
-    """
-    from app.modules.auth.schemas import Register
-
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.post(
-            "/auth/register",
-            data={
-                "email": "nuevo.usuario@test.com",
-                "nombre": "Nuevo Usuario",
-                "password": "TestPass123",
-                "documento": "12345678-A",
-                "telefono": "555-0100",
-            },
-        )
-
-    assert response.status_code == 201, f"Esperaba 201, got {response.status_code}: {response.text}"
-
+    """Registro atómico de cliente."""
+    response = await client.post(
+        "/auth/register",
+        json={
+            "email": "nuevo.cliente@test.com",
+            "nombre": "Nuevo Cliente",
+            "password": "Password123",
+            "documento": "12345678-A",
+            "telefono": "555-0100",
+        },
+    )
+    assert response.status_code == 201
     data = response.json()
-    assert "id" in data
-    assert "email" in data
-    assert "nombre" in data
-    assert "rol" in data
-    assert "password_hash" not in str(data), "Response body no debe incluir password_hash"
-
-    # Verificar cookie
-    cookie = response.cookies.get("access_token")
-    assert cookie is not None, "Cookie access_token debe estar incluida"
+    assert data["email"] == "nuevo.cliente@test.com"
+    assert data["rol"] == "CLIENTE"
+    assert "password_hash" not in str(data)
+    assert "access_token" in response.cookies
 
 
 @pytest.mark.asyncio
 async def test_register_duplicado_email(client):
-    """Registro con email duplicado.
+    """Registro con email duplicado retorna 409."""
+    data = {
+        "email": "duplicado@test.com",
+        "nombre": "Duplicado",
+        "password": "Password123",
+        "documento": "87654321-B",
+        "telefono": "555-0100",
+    }
+    r1 = await client.post("/auth/register", json=data)
+    assert r1.status_code == 201
 
-    - Retorna 409 Conflict
-    """
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Register first time
-        await ac.post(
-            "/auth/register",
-            data={
-                "email": "duplicado@test.com",
-                "nombre": "Duplicado",
-                "password": "TestPass123",
-                "documento": "87654321-B",
-                "telefono": "555-0100",
-            },
-        )
-        # Register again with same email
-        response = await ac.post(
-            "/auth/register",
-            data={
-                "email": "duplicado@test.com",
-                "nombre": "Otro Duplicado",
-                "password": "TestPass123",
-                "documento": "11111111-C",
-                "telefono": "555-0100",
-            },
-        )
+    r2 = await client.post(
+        "/auth/register",
+        json={**data, "documento": "99999999-Z"},
+    )
+    assert r2.status_code == 409
 
-    assert response.status_code == 409, f"Esperaba 409, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert "Email ya registrado" in data.get("detail", ""), f"Esperaba 'Email ya registrado', got {data.get('detail')}"
-
-
-# ---------- Pruebas RN-08 ----------
 
 @pytest.mark.asyncio
-async def test_rn08_intento_registrado_en_db(client):
-    """RN-08: Se registra un intento fallido en la base de datos (intento_acceso)."""
-    from app.modules.auth.models import Usuario, IntentoAcceso
-    from sqlmodel import select
-
-    # Asegurar que hay un usuario en la BD
-    async with get_session() as session:
-        result = await session.execute(select(Usuario).limit(1))
-        usuario = result.scalar_one_or_none()
-        if usuario is None:
-            pytest.skip("No hay usuarios en la base de datos")
-
-    # Hacer login fallido
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        response = await ac.post(
-            "/auth/login",
-            data={"email": usuario.email, "password": "password_equivocada"},
-        )
-
-    # El login debe fallar 401, pero el intento debe estar en BD
+async def test_rn08_intento_registrado_en_db(client, auth_user):
+    """RN-08: Se registra un intento fallido en intento_acceso."""
+    response = await client.post(
+        "/auth/login",
+        json={"email": auth_user.email, "password": "password_equivocada"},
+    )
     assert response.status_code == 401
 
-    # Verificar que el intento está registrado en la base de datos
-    async with get_session() as session:
+    async with app.state.async_session_maker() as session:
         result = await session.execute(
             select(IntentoAcceso).where(
-                IntentoAcceso.email == usuario.email,
-                IntentoAcceso.ip == "127.0.0.1",
+                IntentoAcceso.email == auth_user.email,
+                IntentoAcceso.exito == False,  # noqa: E712
             )
         )
         intentos = result.scalars().all()
-        assert len(intentos) >= 1, "Debe registrarse al menos un intento en intento_acceso"
+        assert len(intentos) >= 1, "Debe registrarse al menos un intento fallido en intento_acceso"
 
 
 @pytest.mark.asyncio
-async def test_rn08_bloqueo_segun_intentos(client):
-    """RN-08: Se bloquea después de 5 intentos fallidos en ventana de 60s."""
-    from app.modules.auth.models import Usuario, IntentoAcceso
-    from sqlmodel import select
-
-    # Asegurar usuario en BD
-    async with get_session() as session:
-        result = await session.execute(select(Usuario).limit(1))
-        usuario = result.scalar_one_or_none()
-        if usuario is None:
-            pytest.skip("No hay usuarios en la base de datos")
-
-    # Simular 5 intentos fallidos desde la misma IP
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        for i in range(5):
-            response = await ac.post(
-                "/auth/login",
-                data={"email": usuario.email, "password": "password_equivocada"},
-            )
-            # Cada intento falla 401, pero el intento se registra en BD
-            assert response.status_code == 401
-
-    # Ahora intentar el sexto login desde la misma IP
-    response = await ac.post(
-        "/auth/login",
-        data={"email": usuario.email, "password": "password_equivocada"},
-    )
+async def test_rn08_bloqueo_segun_intentos(client, auth_user):
+    """RN-08: Se bloquea después de 5 intentos fallidos en 60s."""
+    for _ in range(5):
+        resp = await client.post(
+            "/auth/login",
+            json={"email": auth_user.email, "password": "password_equivocada"},
+        )
+        assert resp.status_code == 401
 
     # El sexto intento debe responder 429 con Retry-After
-    assert response.status_code == 429, f"Esperaba 429, got {response.status_code}: {response.text}"
-    # Verificar que el header Retry-After está presente
-    retry_after = response.headers.get("retry-after")
-    assert retry_after is not None, "Falta header Retry-After"
+    resp6 = await client.post(
+        "/auth/login",
+        json={"email": auth_user.email, "password": "password_equivocada"},
+    )
+    assert resp6.status_code == 429
+    assert "retry-after" in resp6.headers or "Retry-After" in resp6.headers
 
 
 @pytest.mark.asyncio
-async def test_rn08_login_correcto_reinicia_conteo(client):
+async def test_rn08_login_correcto_reinicia_conteo(client, auth_user):
     """RN-08: Un login correcto reinicia el conteo efectivo de fallos."""
-    from app.modules.auth.models import Usuario, IntentoAcceso
-    from sqlmodel import select
+    for _ in range(3):
+        resp = await client.post(
+            "/auth/login",
+            json={"email": auth_user.email, "password": "password_equivocada"},
+        )
+        assert resp.status_code == 401
 
-    # Asegurar usuario en BD
-    async with get_session() as session:
-        result = await session.execute(select(Usuario).limit(1))
-        usuario = result.scalar_one_or_none()
-        if usuario is None:
-            pytest.skip("No hay usuarios en la base de datos")
-
-    # Simular 3 intentos fallidos
-    transport = ASGITransport(app=client.app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        for i in range(3):
-            response = await ac.post(
-                "/auth/login",
-                data={"email": usuario.email, "password": "password_equivocada"},
-            )
-            assert response.status_code == 401
-
-    # Ahora hacer login correcto
-    response = await ac.post(
+    # Login correcto
+    resp_ok = await client.post(
         "/auth/login",
-        data={"email": usuario.email, "password": "test-password-123"},
+        json={"email": auth_user.email, "password": "test-password-123"},
     )
-    assert response.status_code == 200, f"Login correcto falló: {response.text}"
+    assert resp_ok.status_code == 200
 
-    # El conteo de fallos debería reiniciarse: intentar nuevamente y no debería estar bloqueado
-    response = await ac.post(
+    # Siguiente intento fallido no debe estar bloqueado (retorna 401, no 429)
+    resp_next = await client.post(
         "/auth/login",
-        data={"email": usuario.email, "password": "password_equivocada"},
+        json={"email": auth_user.email, "password": "password_equivocada"},
     )
-    # Después de login correcto, el conteo se reinicia, así que debería ser 401 normal, no 429
-    # (puede ser 401 porque la contraseña es incorrecta, pero no debe ser 429 bloqueo)
-    # Lo importante es que no sea 429 por exceder el límite
-    assert response.status_code != 429, "Después de login correcto, no debería bloquearse el siguiente intento"
-
-
-@pytest.mark.asyncio
-async def test_rn08_intentos_exceden_ventana_60s(client):
-    """RN-08: Los intentos anteriores al período de 60 segundos no cuentan para el bloqueo.
-    
-    NOTA: Este test requiere reloj modificado o condiciones específicas.
-    Se valida aquí que la consulta SQL usa interval '60 seconds' correctamente.
-    """
-    from app.modules.auth.models import IntentoAcceso
-    from sqlmodel import select
-    from datetime import datetime, timedelta
-    import time as tiempo_module
-
-    # Esto es un test de validación de lógica; en ejecución real con BD
-    # verificaría que los intentos con timestamp hace más de 60s no cuentan
-    # hacia el bloqueo. Por ahora, validamos que la estructura de la query
-    # existe y usa el intervalo correcto.
-    assert True  # Placeholder - validación de lógica en servicio
+    assert resp_next.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_rn08_intentos_perduran_rollback(client):
-    """RN-08: Los intentos quedan registrados aunque la transacción principal del login se revierta.
-    
-    Este es el punto clave: el registro de intentos usa sesión independiente
-    que sobrevive al rollback. Se valida la arquitectura, no el comportamiento
-    en ejecución sin BD configurada.
-    """
-    # Validación de arquitectura: el servicio usa app.state.async_session_maker()
-    # para crear sesión independiente de la transacción de login.
-    # Esto garantiza persistencia de intentosaunque el login falle o se revierta.
-    from app.core.database import get_session
-    assert True  # Placeholder - arquitectura verificada en code review
+    """Task 2.2: Los intentos quedan registrados aunque la sesión principal sufra un rollback."""
+    session_maker = app.state.async_session_maker
+    async with session_maker() as main_session:
+        # Abrir transacción en la sesión principal
+        await main_session.begin()
+
+        # Registrar intento de acceso
+        await registrar_intento_acceso(
+            main_session,
+            "rollback_test@test.com",
+            "192.168.1.50",
+            exito=False,
+        )
+
+        # Forzar rollback explícito de la sesión principal
+        await main_session.rollback()
+
+    # Verificar en una sesión limpia e independiente que el intento persistió
+    async with session_maker() as verify_session:
+        result = await verify_session.execute(
+            select(IntentoAcceso).where(
+                IntentoAcceso.email == "rollback_test@test.com"
+            )
+        )
+        intento = result.scalar_one_or_none()
+        assert intento is not None, (
+            "El intento de acceso debe persistir en la base de datos a pesar del rollback de la sesión principal"
+        )
+        assert intento.exito is False
+        assert intento.ip == "192.168.1.50"

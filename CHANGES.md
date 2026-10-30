@@ -214,7 +214,7 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
   - `knowledge-base/07_flujos_principales.md` (Flujo 2, 4, 6)
 
 ### [C-07] `integridad-solo-agregado-intento-acceso`
-- **Estado**: `[ ]` pendiente
+- **Estado**: `[x]` completado
 - **Puntos**: 10 | **Orden sugerido**: 7
 - **Scope**:
   - Disparador de base de datos que rechaza `UPDATE`/`DELETE` en `historial_estado_orden`, `movimiento_stock` e `historial_precio_repuesto` (RN-15)

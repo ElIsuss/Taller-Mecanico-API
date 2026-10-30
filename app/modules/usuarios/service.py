@@ -148,27 +148,54 @@ async def registrar_intento_acceso(
 ) -> None:
     """Registra de forma persistente un intento de acceso en la tabla intento_acceso.
     
-    Usa una sesión separada para sobrevivir al rollback de la sesión principal si el login falla.
+    Utiliza una transacción y sesión independientes para garantizar que el registro
+    persista aun si la transacción principal del request sufre un rollback o falla (RN-08).
     """
     email_norm = email.lower().strip()
-    try:
-        if session.bind:
-            async with AsyncSession(session.bind) as sep_session:
+
+    # 1. Intentar sesión autónoma a través del bind de la sesión actual
+    bind = getattr(session, "bind", None)
+    if bind is None:
+        try:
+            bind = session.get_bind()
+        except Exception:
+            bind = None
+
+    if bind is not None:
+        try:
+            from sqlalchemy.ext.asyncio import AsyncEngine
+            engine = bind if isinstance(bind, AsyncEngine) else getattr(bind, "engine", bind)
+            async with AsyncSession(engine, expire_on_commit=False) as sep_session:
                 async with sep_session.begin():
                     intento = IntentoAcceso(email=email_norm, ip=ip, exito=exito)
                     repository = IntentoAccesoRepository(sep_session)
                     await repository.add(intento)
-                    await repository.flush()
+                return
+        except Exception:
+            pass
+
+    # 2. Intentar sesión autónoma a través de app.state.async_session_maker
+    try:
+        from app.main import app
+        session_maker = getattr(app.state, "async_session_maker", None)
+        if session_maker is not None:
+            async with session_maker() as sep_session:
+                async with sep_session.begin():
+                    intento = IntentoAcceso(email=email_norm, ip=ip, exito=exito)
+                    repository = IntentoAccesoRepository(sep_session)
+                    await repository.add(intento)
                 return
     except Exception:
         pass
 
-    # Fallback si no hay bind separado o ocurrió excepción
+    # 3. Fallback directo en la sesión actual
     try:
         intento = IntentoAcceso(email=email_norm, ip=ip, exito=exito)
         repository = IntentoAccesoRepository(session)
         await repository.add(intento)
         await repository.flush()
+        if hasattr(session, "commit"):
+            await session.commit()
     except Exception:
         pass
 

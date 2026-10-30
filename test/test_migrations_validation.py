@@ -160,11 +160,12 @@ async def test_4_4_trigger_exists_on_protected_tables():
 
 @pytest.mark.asyncio
 async def test_4_4_trigger_rejects_update_and_delete():
-    """4.4b: RN-15 rejects UPDATE and DELETE (allows INSERT) on a protected table."""
+    """4.4b: RN-15 rejects UPDATE and DELETE (allows INSERT) on all protected tables."""
     _run_alembic(["upgrade", "head"])
 
     conn = await _pg()
     try:
+        # Fixtures base
         await conn.execute(
             "INSERT INTO usuario (id, email, nombre, password_hash, activo, debe_cambiar_password) "
             "VALUES (1, 'mecanico@test.com', 'Mecanico', 'hash', true, false)"
@@ -174,15 +175,60 @@ async def test_4_4_trigger_rejects_update_and_delete():
             "VALUES (1, 'REP-001', 'Test', 10.0, 5)"
         )
         await conn.execute(
+            "INSERT INTO cliente (id, nombre, documento, telefono) "
+            "VALUES (1, 'Juan Perez', '12345678', '555-1234')"
+        )
+        await conn.execute(
+            "INSERT INTO vehiculo (id, patente, marca, modelo, anio, cliente_id) "
+            "VALUES (1, 'AA123BB', 'Fiat', 'Cronos', 2022, 1)"
+        )
+        await conn.execute(
+            "INSERT INTO estado_orden (codigo, descripcion, posicion, es_final) "
+            "VALUES ('PENDIENTE', 'Pendiente', 1, false)"
+        )
+        await conn.execute(
+            "INSERT INTO orden_trabajo (id, vehiculo_id, estado, total, falla) "
+            "VALUES (1, 1, 'PENDIENTE', 100.0, 'Falla en frenos')"
+        )
+
+        # 1. Probar movimiento_stock
+        await conn.execute(
             "INSERT INTO movimiento_stock (id, repuesto_id, usuario_id, cantidad, motivo) "
             "VALUES (1, 1, 1, 10, 'ingreso')"
         )
-
-        with pytest.raises(asyncpg.PostgresError):
+        with pytest.raises(asyncpg.PostgresError) as exc_info_mov_upd:
             await conn.execute("UPDATE movimiento_stock SET cantidad = 99 WHERE id = 1")
+        assert "RN-15" in str(exc_info_mov_upd.value)
 
-        with pytest.raises(asyncpg.PostgresError):
+        with pytest.raises(asyncpg.PostgresError) as exc_info_mov_del:
             await conn.execute("DELETE FROM movimiento_stock WHERE id = 1")
+        assert "RN-15" in str(exc_info_mov_del.value)
+
+        # 2. Probar historial_precio_repuesto
+        await conn.execute(
+            "INSERT INTO historial_precio_repuesto (id, repuesto_id, precio_anterior, precio_nuevo, usuario_id) "
+            "VALUES (1, 1, 10.0, 15.0, 1)"
+        )
+        with pytest.raises(asyncpg.PostgresError) as exc_info_pre_upd:
+            await conn.execute("UPDATE historial_precio_repuesto SET precio_nuevo = 20.0 WHERE id = 1")
+        assert "RN-15" in str(exc_info_pre_upd.value)
+
+        with pytest.raises(asyncpg.PostgresError) as exc_info_pre_del:
+            await conn.execute("DELETE FROM historial_precio_repuesto WHERE id = 1")
+        assert "RN-15" in str(exc_info_pre_del.value)
+
+        # 3. Probar historial_estado_orden
+        await conn.execute(
+            "INSERT INTO historial_estado_orden (id, orden_id, desde_estado, hasta_estado, usuario_id) "
+            "VALUES (1, 1, NULL, 'PENDIENTE', 1)"
+        )
+        with pytest.raises(asyncpg.PostgresError) as exc_info_ord_upd:
+            await conn.execute("UPDATE historial_estado_orden SET hasta_estado = 'TERMINADA' WHERE id = 1")
+        assert "RN-15" in str(exc_info_ord_upd.value)
+
+        with pytest.raises(asyncpg.PostgresError) as exc_info_ord_del:
+            await conn.execute("DELETE FROM historial_estado_orden WHERE id = 1")
+        assert "RN-15" in str(exc_info_ord_del.value)
     finally:
         await conn.close()
 
