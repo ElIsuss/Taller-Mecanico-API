@@ -19,11 +19,19 @@ from app.modules.clientes.schemas import (
     VehiculoRead,
     VehiculoUpdate,
 )
+from app.modules.clientes.unit_of_work import ClienteUnitOfWork
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 router_vehiculos = APIRouter(prefix="/vehiculos", tags=["vehiculos"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def get_cliente_uow(session: SessionDep) -> ClienteUnitOfWork:
+    return ClienteUnitOfWork(session=session)
+
+
+ClienteUowDep = Annotated[ClienteUnitOfWork, Depends(get_cliente_uow)]
 ClienteId = Annotated[int, Path(ge=1)]
 VehiculoId = Annotated[int, Path(ge=1)]
 
@@ -36,11 +44,11 @@ VehiculoId = Annotated[int, Path(ge=1)]
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def listar_clientes(
-    session: SessionDep,
+    uow: ClienteUowDep,
     params: Annotated[PaginaParams, Depends()],
 ) -> Pagina[ClienteRead]:
     clientes, total = await service.listar_clientes(
-        session, params.offset, params.size
+        uow, params.offset, params.size
     )
     return construir_pagina(
         [ClienteRead.model_validate(c) for c in clientes], total, params
@@ -56,9 +64,9 @@ async def listar_clientes(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def crear_cliente(
-    data: ClienteCreate, session: SessionDep
+    data: ClienteCreate, uow: ClienteUowDep
 ) -> ClienteRead:
-    cliente = await service.crear_cliente(session, data)
+    cliente = await service.crear_cliente(uow, data)
     return ClienteRead.model_validate(cliente)
 
 
@@ -70,9 +78,9 @@ async def crear_cliente(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def obtener_cliente(
-    cliente_id: ClienteId, session: SessionDep
+    cliente_id: ClienteId, uow: ClienteUowDep
 ) -> ClienteDetalleRead:
-    cliente = await service.obtener_cliente(session, cliente_id)
+    cliente = await service.obtener_cliente(uow, cliente_id)
     return ClienteDetalleRead.model_validate(cliente)
 
 
@@ -87,10 +95,10 @@ async def obtener_cliente(
 async def crear_vehiculo_de_cliente(
     cliente_id: ClienteId,
     data: VehiculoDeClienteCreate,
-    session: SessionDep,
+    uow: ClienteUowDep,
 ) -> VehiculoRead:
     vehiculo = await service.crear_vehiculo(
-        session, VehiculoCreate(cliente_id=cliente_id, **data.model_dump())
+        uow, VehiculoCreate(cliente_id=cliente_id, **data.model_dump())
     )
     return VehiculoRead.model_validate(vehiculo)
 
@@ -103,9 +111,9 @@ async def crear_vehiculo_de_cliente(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def actualizar_cliente(
-    cliente_id: ClienteId, data: ClienteUpdate, session: SessionDep
+    cliente_id: ClienteId, data: ClienteUpdate, uow: ClienteUowDep
 ) -> ClienteRead:
-    cliente = await service.actualizar_cliente(session, cliente_id, data)
+    cliente = await service.actualizar_cliente(uow, cliente_id, data)
     return ClienteRead.model_validate(cliente)
 
 
@@ -117,8 +125,8 @@ async def actualizar_cliente(
     description="Borra el cliente si no tiene vehículos asociados.",
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
-async def borrar_cliente(cliente_id: ClienteId, session: SessionDep) -> Response:
-    await service.borrar_cliente(session, cliente_id)
+async def borrar_cliente(cliente_id: ClienteId, uow: ClienteUowDep) -> Response:
+    await service.borrar_cliente(uow, cliente_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -130,12 +138,12 @@ async def borrar_cliente(cliente_id: ClienteId, session: SessionDep) -> Response
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def listar_vehiculos(
-    session: SessionDep,
+    uow: ClienteUowDep,
     params: Annotated[PaginaParams, Depends()],
     cliente_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> Pagina[VehiculoRead]:
     vehiculos, total = await service.listar_vehiculos(
-        session, params.offset, params.size, cliente_id
+        uow, params.offset, params.size, cliente_id
     )
     return construir_pagina(
         [VehiculoRead.model_validate(v) for v in vehiculos], total, params
@@ -151,9 +159,9 @@ async def listar_vehiculos(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def crear_vehiculo(
-    data: VehiculoCreate, session: SessionDep
+    data: VehiculoCreate, uow: ClienteUowDep
 ) -> VehiculoRead:
-    vehiculo = await service.crear_vehiculo(session, data)
+    vehiculo = await service.crear_vehiculo(uow, data)
     return VehiculoRead.model_validate(vehiculo)
 
 
@@ -165,9 +173,9 @@ async def crear_vehiculo(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def obtener_vehiculo(
-    vehiculo_id: VehiculoId, session: SessionDep
+    vehiculo_id: VehiculoId, uow: ClienteUowDep
 ) -> VehiculoRead:
-    vehiculo = await service.obtener_vehiculo(session, vehiculo_id)
+    vehiculo = await service.obtener_vehiculo(uow, vehiculo_id)
     return VehiculoRead.model_validate(vehiculo)
 
 
@@ -179,9 +187,9 @@ async def obtener_vehiculo(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def actualizar_vehiculo(
-    vehiculo_id: VehiculoId, data: VehiculoUpdate, session: SessionDep
+    vehiculo_id: VehiculoId, data: VehiculoUpdate, uow: ClienteUowDep
 ) -> VehiculoRead:
-    vehiculo = await service.actualizar_vehiculo(session, vehiculo_id, data)
+    vehiculo = await service.actualizar_vehiculo(uow, vehiculo_id, data)
     return VehiculoRead.model_validate(vehiculo)
 
 
@@ -193,6 +201,6 @@ async def actualizar_vehiculo(
     description="Da de baja lógica un vehículo sin órdenes abiertas.",
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
-async def borrar_vehiculo(vehiculo_id: VehiculoId, session: SessionDep) -> Response:
-    await service.borrar_vehiculo(session, vehiculo_id)
+async def borrar_vehiculo(vehiculo_id: VehiculoId, uow: ClienteUowDep) -> Response:
+    await service.borrar_vehiculo(uow, vehiculo_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

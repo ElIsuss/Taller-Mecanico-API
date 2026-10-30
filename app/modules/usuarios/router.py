@@ -6,18 +6,25 @@ import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.core.dependencies import get_current_user, requiere_rol
 from app.core.security import delete_access_token_cookie, set_access_token_cookie
 from app.modules.usuarios import schemas, service
-from app.modules.usuarios.models import AsignacionRol, EventoSeguridad, Usuario
+from app.modules.usuarios.models import Usuario
+from app.modules.usuarios.unit_of_work import UsuarioUnitOfWork
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def get_usuario_uow(session: SessionDep) -> UsuarioUnitOfWork:
+    return UsuarioUnitOfWork(session=session)
+
+
+UsuarioUowDep = Annotated[UsuarioUnitOfWork, Depends(get_usuario_uow)]
 
 
 @router.post(
@@ -29,11 +36,11 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 )
 async def asignar_rol(
     data: schemas.AsignarRol,
-    session: SessionDep,
+    uow: UsuarioUowDep,
     current_usuario: Usuario = Depends(requiere_rol("ADMIN")),
 ) -> dict[str, str | int]:
     asignacion = await service.asignar_rol_usuario(
-        session,
+        uow,
         data.usuario_id,
         data.rol,
         current_usuario.id,
@@ -54,11 +61,11 @@ async def asignar_rol(
 )
 async def revocar_rol(
     data: schemas.RevocarRol,
-    session: SessionDep,
+    uow: UsuarioUowDep,
     current_usuario: Usuario = Depends(requiere_rol("ADMIN")),
 ) -> dict[str, str | int | None]:
     asignacion = await service.revocar_rol_usuario(
-        session,
+        uow,
         data.usuario_id,
         data.rol,
         current_usuario.id,
@@ -77,13 +84,11 @@ async def revocar_rol(
     description="Lista los eventos de seguridad registrados por la auditoría del sistema.",
 )
 async def listar_eventos_seguridad(
-    session: SessionDep,
+    uow: UsuarioUowDep,
     current_usuario: Usuario = Depends(requiere_rol("ADMIN")),
 ) -> list[schemas.EventoSeguridadRead]:
     del current_usuario
-    stmt = select(EventoSeguridad).order_by(EventoSeguridad.cuando.desc())
-    result = await session.execute(stmt)
-    eventos = result.scalars().all()
+    eventos = await service.listar_eventos_seguridad(uow)
     return [
         schemas.EventoSeguridadRead(
             id=e.id,
@@ -105,7 +110,7 @@ async def listar_eventos_seguridad(
 async def login(
     data: schemas.Login,
     request: Request,
-    session: SessionDep,
+    uow: UsuarioUowDep,
     response: Response,
 ) -> schemas.Me:
     """Login de usuario.
@@ -117,7 +122,9 @@ async def login(
     client_ip = request.client.host if request.client else "127.0.0.1"
 
     # Verificar si ya está bloqueado antes de evaluar credenciales (RN-08)
-    bloqueado, _, retry_after = await service.chequear_bloqueo(session, data.email, client_ip)
+    bloqueado, _, retry_after = await service.chequear_bloqueo(
+        uow, data.email, client_ip
+    )
     if bloqueado:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -126,7 +133,7 @@ async def login(
         )
 
     usuario = await service.autenticar_usuario(
-        session, data.email, data.password, ip=client_ip
+        uow, data.email, data.password, ip=client_ip
     )
 
     if usuario is None:
@@ -142,14 +149,7 @@ async def login(
             detail="Account disabled",
         )
 
-    # Consultar roles vigentes en base de datos (RN-04)
-    stmt = (
-        select(AsignacionRol.rol)
-        .where(AsignacionRol.usuario_id == usuario.id)
-        .where(AsignacionRol.revocada_en.is_(None))
-    )
-    result = await session.execute(stmt)
-    roles = result.scalars().all()
+    roles = await service.obtener_roles_vigentes(uow, usuario.id)
     rol_principal = roles[0] if roles else "CLIENTE"
 
     token = await service.crear_token_usuario(usuario, roles=roles)
@@ -173,7 +173,7 @@ async def login(
 )
 async def register(
     data: schemas.Register,
-    session: SessionDep,
+    uow: UsuarioUowDep,
     response: Response,
 ) -> schemas.Me:
     """Registro de nuevo cliente.
@@ -182,7 +182,7 @@ async def register(
     - Contraseña hasheada fuera del event loop (bcrypt con BCRYPT_ROUNDS).
     - Retorna 201 Created y emite cookie de sesión.
     """
-    usuario = await service.registrar_usuario_atomico(session, data)
+    usuario = await service.registrar_usuario_atomico(uow, data)
 
     token = await service.crear_token_usuario(usuario, roles=["CLIENTE"])
     set_access_token_cookie(response, token)
@@ -222,7 +222,7 @@ async def logout(
     description="Devuelve los datos del usuario sin password_hash consultando roles vigentes (RN-04).",
 )
 async def perfil(
-    session: SessionDep,
+    uow: UsuarioUowDep,
     current_usuario: Usuario = Depends(get_current_user),
 ) -> schemas.Me:
     """Obtener el perfil del usuario autenticado.
@@ -231,13 +231,7 @@ async def perfil(
     - No expone password_hash.
     - Consulta roles vigentes en base de datos en cada petición (RN-04).
     """
-    stmt = (
-        select(AsignacionRol.rol)
-        .where(AsignacionRol.usuario_id == current_usuario.id)
-        .where(AsignacionRol.revocada_en.is_(None))
-    )
-    result = await session.execute(stmt)
-    roles = result.scalars().all()
+    roles = await service.obtener_roles_vigentes(uow, current_usuario.id)
     rol_principal = roles[0] if roles else "CLIENTE"
 
     return schemas.Me(

@@ -17,8 +17,16 @@ from app.modules.ordenes.schemas import (
     OrdenRead,
     OrdenUpdate,
 )
+from app.modules.ordenes.unit_of_work import OrdenUnitOfWork
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def get_orden_uow(session: SessionDep) -> OrdenUnitOfWork:
+    return OrdenUnitOfWork(session=session)
+
+
+OrdenUowDep = Annotated[OrdenUnitOfWork, Depends(get_orden_uow)]
 OrdenId = Annotated[int, Path(ge=1)]
 
 router_estados = APIRouter(prefix="/estados-orden", tags=["estados-orden"])
@@ -33,10 +41,10 @@ router = APIRouter(prefix="/ordenes", tags=["ordenes"])
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"))],
 )
 async def listar_estados(
-    session: SessionDep,
+    uow: OrdenUowDep,
     params: Annotated[PaginaParams, Depends()],
 ) -> Pagina[EstadoOrdenRead]:
-    estados, total = await service.listar_estados(session, params.offset, params.size)
+    estados, total = await service.listar_estados(uow, params.offset, params.size)
     return construir_pagina(
         [EstadoOrdenRead.model_validate(e) for e in estados], total, params
     )
@@ -49,8 +57,8 @@ async def listar_estados(
     description="Devuelve un estado del catálogo por su código.",
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"))],
 )
-async def obtener_estado(codigo: str, session: SessionDep) -> EstadoOrdenRead:
-    estado = await service.obtener_estado(session, codigo)
+async def obtener_estado(codigo: str, uow: OrdenUowDep) -> EstadoOrdenRead:
+    estado = await service.obtener_estado(uow, codigo)
     return EstadoOrdenRead.model_validate(estado)
 
 
@@ -62,13 +70,13 @@ async def obtener_estado(codigo: str, session: SessionDep) -> EstadoOrdenRead:
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"))],
 )
 async def listar_ordenes(
-    session: SessionDep,
+    uow: OrdenUowDep,
     params: Annotated[PaginaParams, Depends()],
     estado: Annotated[EstadoOrdenCodigo | None, Query()] = None,
     vehiculo_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> Pagina[OrdenRead]:
     ordenes, total = await service.listar_ordenes(
-        session,
+        uow,
         params.offset,
         params.size,
         estado.value if estado is not None else None,
@@ -85,8 +93,8 @@ async def listar_ordenes(
     description="Abre una orden PENDIENTE con sus ítems y el total calculado.",
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
-async def crear_orden(data: OrdenCreate, session: SessionDep) -> OrdenRead:
-    return await service.crear_orden(session, data)
+async def crear_orden(data: OrdenCreate, uow: OrdenUowDep) -> OrdenRead:
+    return await service.crear_orden(uow, data)
 
 
 @router.get(
@@ -96,8 +104,8 @@ async def crear_orden(data: OrdenCreate, session: SessionDep) -> OrdenRead:
     description="Devuelve una orden con su estado, total e ítems.",
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"))],
 )
-async def obtener_orden(orden_id: OrdenId, session: SessionDep) -> OrdenRead:
-    return await service.obtener_orden(session, orden_id)
+async def obtener_orden(orden_id: OrdenId, uow: OrdenUowDep) -> OrdenRead:
+    return await service.obtener_orden(uow, orden_id)
 
 
 @router.patch(
@@ -108,9 +116,9 @@ async def obtener_orden(orden_id: OrdenId, session: SessionDep) -> OrdenRead:
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def actualizar_orden(
-    orden_id: OrdenId, data: OrdenUpdate, session: SessionDep
+    orden_id: OrdenId, data: OrdenUpdate, uow: OrdenUowDep
 ) -> OrdenRead:
-    return await service.actualizar_orden(session, orden_id, data)
+    return await service.actualizar_orden(uow, orden_id, data)
 
 
 @router.post(
@@ -121,9 +129,9 @@ async def actualizar_orden(
     dependencies=[Depends(requiere_rol("ADMIN", "MECANICO"))],
 )
 async def iniciar_orden(
-    orden_id: OrdenId, data: OrdenAccion, session: SessionDep
+    orden_id: OrdenId, data: OrdenAccion, uow: OrdenUowDep
 ) -> OrdenRead:
-    return await service.iniciar_orden(session, orden_id, data.usuario_id)
+    return await service.iniciar_orden(uow, orden_id, data.usuario_id)
 
 
 @router.post(
@@ -134,9 +142,9 @@ async def iniciar_orden(
     dependencies=[Depends(requiere_rol("ADMIN", "MECANICO"))],
 )
 async def terminar_orden(
-    orden_id: OrdenId, data: OrdenAccion, session: SessionDep
+    orden_id: OrdenId, data: OrdenAccion, uow: OrdenUowDep
 ) -> OrdenRead:
-    return await service.terminar_orden(session, orden_id, data.usuario_id)
+    return await service.terminar_orden(uow, orden_id, data.usuario_id)
 
 
 @router.post(
@@ -147,6 +155,6 @@ async def terminar_orden(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "CLIENTE"))],
 )
 async def cancelar_orden(
-    orden_id: OrdenId, data: OrdenAccion, session: SessionDep
+    orden_id: OrdenId, data: OrdenAccion, uow: OrdenUowDep
 ) -> OrdenRead:
-    return await service.cancelar_orden(session, orden_id, data.usuario_id)
+    return await service.cancelar_orden(uow, orden_id, data.usuario_id)

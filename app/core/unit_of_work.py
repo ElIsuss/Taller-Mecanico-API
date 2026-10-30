@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from types import TracebackType
+from typing import Any, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.repository import BaseRepository
+
+RepositoryT = TypeVar("RepositoryT", bound=BaseRepository[Any])
 
 
 class UnitOfWork:
@@ -19,10 +25,10 @@ class UnitOfWork:
         self.session_factory = session_factory
         self.session = session
         self._owns_session = session is None and session_factory is not None
-        self._repositories: list[object] = []
+        self._repositories: list[BaseRepository[Any]] = []
         self._bind_repositories()
 
-    def _register_repository(self, repository: object) -> object:
+    def _register_repository(self, repository: RepositoryT) -> RepositoryT:
         self._repositories.append(repository)
         repository.session = self.session
         return repository
@@ -74,6 +80,7 @@ class UnitOfWork:
             self.session = None
             self._bind_repositories()
 
+    @asynccontextmanager
     async def begin(self) -> AsyncIterator["UnitOfWork"]:
         async with self:
             yield self

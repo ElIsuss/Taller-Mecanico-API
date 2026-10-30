@@ -11,9 +11,11 @@ El proyecto ya define una arquitectura por capas y la base de modelos de dominio
 - Garantizar transacciones sobre una sesión compartida por módulo.
 - Reutilizar la semántica de borrado lógico cuando el modelo lo requiere.
 - Mantener la regla de que los repositorios usen `flush()` y no `commit()`.
+- Conectar los servicios transaccionales de cada dominio con sus repositorios mediante UoW.
+- Centralizar cualquier modificación de stock en el registro de movimientos.
 
 **Non-Goals:**
-- Rediseñar toda la lógica de negocios de los servicios.
+- Rediseñar reglas de negocio ajenas al acceso a datos y a los límites transaccionales.
 - Cambiar la base tecnológica ni el esquema de BD.
 - Introducir una capa de cache u optimizaciones de consultas fuera del alcance del patrón UoW.
 
@@ -39,6 +41,10 @@ El proyecto ya define una arquitectura por capas y la base de modelos de dominio
 
 ### 5. `get_uow()` en la capa de infraestructura
 - `app/core/database.py` ofrece un factory de `UnitOfWork` para que servicios o dependencias puedan crear un bloque transaccional sin manipular el engine directamente.
+
+### 6. Servicios ejecutados dentro del UoW
+- Los routers inyectan un UoW de dominio y los servicios lo abren con `async with`.
+- Consultas y escrituras transaccionales se realizan a través de repositorios; las operaciones atómicas de registro, precio y terminación de órdenes quedan en un único UoW.
 
 ## Risks / Trade-offs
 - [Risk: Cambio de servicio directo a UoW en varios módulos] → Mitigation: el cambio se mantiene en la capa base y módulo, sin reescribir toda la lógica de negocio a la vez.

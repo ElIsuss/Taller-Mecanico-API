@@ -1,14 +1,9 @@
-﻿"""Reglas de negocio del catálogo de estados y de las órdenes de trabajo."""
+"""Reglas de negocio del catálogo de estados y de las órdenes de trabajo."""
 
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from app.core.exceptions import Conflicto, Invalido, NoEncontrado
-from app.modules.clientes.models import Vehiculo
 from app.modules.ordenes.models import (
     EstadoOrden,
     HistorialEstadoOrden,
@@ -22,8 +17,9 @@ from app.modules.ordenes.schemas import (
     OrdenRead,
     OrdenUpdate,
 )
-from app.modules.repuestos.models import MovimientoStock, Repuesto
-from app.modules.usuarios.service import obtener_usuario
+from app.modules.ordenes.unit_of_work import OrdenUnitOfWork
+from app.modules.repuestos.models import Repuesto
+from app.modules.repuestos.service import registrar_movimiento_stock
 
 PENDIENTE = "PENDIENTE"
 EN_REPARACION = "EN_REPARACION"
@@ -35,8 +31,8 @@ def _ahora() -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def _obtener_estado(session: AsyncSession, codigo: str) -> EstadoOrden:
-    estado = await session.get(EstadoOrden, codigo)
+async def _obtener_estado(uow: OrdenUnitOfWork, codigo: str) -> EstadoOrden:
+    estado = await uow.estados.get_by_id(codigo)
     if estado is None:
         raise Conflicto("El catálogo de estados de orden está incompleto")
     return estado
@@ -76,32 +72,21 @@ def _a_read(orden: OrdenTrabajo) -> OrdenRead:
 
 
 async def _cargar_orden(
-    session: AsyncSession, orden_id: int, bloquear: bool = False
+    uow: OrdenUnitOfWork, orden_id: int, bloquear: bool = False
 ) -> OrdenTrabajo:
-    stmt = (
-        select(OrdenTrabajo)
-        .options(
-            selectinload(OrdenTrabajo.items).selectinload(ItemOrden.repuesto),
-            selectinload(OrdenTrabajo.vehiculo).selectinload(Vehiculo.cliente),
-            selectinload(OrdenTrabajo.historial_estados),
-        )
-        .where(OrdenTrabajo.id == orden_id)
-    )
-    if bloquear:
-        stmt = stmt.with_for_update()
-    orden = await session.scalar(stmt)
+    orden = await uow.ordenes.get_loaded(orden_id, lock=bloquear)
     if orden is None:
         raise NoEncontrado("La orden no existe")
     return orden
 
 
 async def _cambiar_estado(
-    session: AsyncSession,
+    uow: OrdenUnitOfWork,
     orden: OrdenTrabajo,
     hasta: str,
     usuario_id: int,
 ) -> None:
-    await _obtener_estado(session, hasta)
+    await _obtener_estado(uow, hasta)
     registro = HistorialEstadoOrden(
         orden_id=orden.id,
         desde_estado=orden.estado,
@@ -109,40 +94,31 @@ async def _cambiar_estado(
         usuario_id=usuario_id,
         cuando=_ahora(),
     )
-    session.add(registro)
+    await uow.historial_estados.add(registro)
     orden.historial_estados.append(registro)
     orden.estado = hasta
 
 
 async def listar_estados(
-    session: AsyncSession, offset: int, limit: int
+    uow: OrdenUnitOfWork, offset: int, limit: int
 ) -> tuple[list[EstadoOrden], int]:
-    total = await session.scalar(select(func.count()).select_from(EstadoOrden))
-    result = await session.scalars(
-        select(EstadoOrden)
-        .order_by(EstadoOrden.posicion)
-        .offset(offset)
-        .limit(limit)
-    )
-    return list(result), int(total or 0)
+    async with uow:
+        return await uow.estados.list_page(offset, limit)
 
 
-async def obtener_estado(session: AsyncSession, codigo: str) -> EstadoOrden:
-    estado = await session.get(EstadoOrden, codigo)
-    if estado is None:
-        raise NoEncontrado("El estado no existe")
-    return estado
+async def obtener_estado(uow: OrdenUnitOfWork, codigo: str) -> EstadoOrden:
+    async with uow:
+        estado = await uow.estados.get_by_id(codigo)
+        if estado is None:
+            raise NoEncontrado("El estado no existe")
+        return estado
 
 
-async def crear_orden(session: AsyncSession, data: OrdenCreate) -> OrdenRead:
-    async with session.begin():
-        await _obtener_estado(session, PENDIENTE)
+async def crear_orden(uow: OrdenUnitOfWork, data: OrdenCreate) -> OrdenRead:
+    async with uow:
+        await _obtener_estado(uow, PENDIENTE)
 
-        vehiculo = await session.scalar(
-            select(Vehiculo)
-            .options(selectinload(Vehiculo.cliente))
-            .where(Vehiculo.id == data.vehiculo_id)
-        )
+        vehiculo = await uow.ordenes.get_vehicle_with_client(data.vehiculo_id)
         if vehiculo is None:
             raise Conflicto("El vehículo indicado no existe")
         if vehiculo.borrado_en is not None:
@@ -150,17 +126,12 @@ async def crear_orden(session: AsyncSession, data: OrdenCreate) -> OrdenRead:
 
         usuario_id = data.usuario_id or vehiculo.cliente.usuario_id
         if usuario_id is None:
-            raise Invalido(
-                "No se pudo determinar el usuario que abre la orden"
-            )
-        await obtener_usuario(session, usuario_id)
+            raise Invalido("No se pudo determinar el usuario que abre la orden")
+        if await uow.usuarios.get_by_id(usuario_id) is None:
+            raise NoEncontrado("El usuario indicado no existe")
 
         repuesto_ids = [item.repuesto_id for item in data.items]
-        repuestos = list(
-            await session.scalars(
-                select(Repuesto).where(Repuesto.id.in_(repuesto_ids))
-            )
-        )
+        repuestos = await uow.ordenes.get_repuestos(repuesto_ids)
         por_id = {repuesto.id: repuesto for repuesto in repuestos}
         for repuesto_id in repuesto_ids:
             repuesto = por_id.get(repuesto_id)
@@ -177,13 +148,13 @@ async def crear_orden(session: AsyncSession, data: OrdenCreate) -> OrdenRead:
             creada_en=_ahora(),
             total=Decimal("0"),
         )
-        session.add(orden)
-        await session.flush()
+        await uow.ordenes.add(orden)
+        await uow.flush()
 
         total = Decimal("0")
         for item_data in data.items:
             repuesto = por_id[item_data.repuesto_id]
-            session.add(
+            await uow.items.add(
                 ItemOrden(
                     orden_id=orden.id,
                     repuesto_id=repuesto.id,
@@ -194,7 +165,7 @@ async def crear_orden(session: AsyncSession, data: OrdenCreate) -> OrdenRead:
             total += repuesto.precio * item_data.cantidad
 
         orden.total = total.quantize(Decimal("0.01"))
-        session.add(
+        await uow.historial_estados.add(
             HistorialEstadoOrden(
                 orden_id=orden.id,
                 desde_estado=None,
@@ -203,109 +174,91 @@ async def crear_orden(session: AsyncSession, data: OrdenCreate) -> OrdenRead:
                 cuando=_ahora(),
             )
         )
-        await session.flush()
+        await uow.flush()
 
-        return _a_read(await _cargar_orden(session, orden.id))
+        return _a_read(await _cargar_orden(uow, orden.id))
 
 
 async def listar_ordenes(
-    session: AsyncSession,
+    uow: OrdenUnitOfWork,
     offset: int,
     limit: int,
     estado: str | None = None,
     vehiculo_id: int | None = None,
 ) -> tuple[list[OrdenRead], int]:
-    filtros = []
-    if estado is not None:
-        filtros.append(OrdenTrabajo.estado == estado)
-    if vehiculo_id is not None:
-        filtros.append(OrdenTrabajo.vehiculo_id == vehiculo_id)
-    total = await session.scalar(
-        select(func.count()).select_from(OrdenTrabajo).where(*filtros)
-    )
-    result = await session.scalars(
-        select(OrdenTrabajo)
-        .options(
-            selectinload(OrdenTrabajo.items).selectinload(ItemOrden.repuesto),
-            selectinload(OrdenTrabajo.vehiculo).selectinload(Vehiculo.cliente),
-            selectinload(OrdenTrabajo.historial_estados),
+    async with uow:
+        ordenes, total = await uow.ordenes.list_page(
+            offset, limit, estado, vehiculo_id
         )
-        .where(*filtros)
-        .order_by(OrdenTrabajo.id.desc())
-        .offset(offset)
-        .limit(limit)
-    )
-    ordenes = [_a_read(orden) for orden in result]
-    return ordenes, int(total or 0)
+        return [_a_read(orden) for orden in ordenes], total
 
 
-async def obtener_orden(session: AsyncSession, orden_id: int) -> OrdenRead:
-    orden = await _cargar_orden(session, orden_id)
-    return _a_read(orden)
+async def obtener_orden(uow: OrdenUnitOfWork, orden_id: int) -> OrdenRead:
+    async with uow:
+        return _a_read(await _cargar_orden(uow, orden_id))
 
 
 async def actualizar_orden(
-    session: AsyncSession, orden_id: int, data: OrdenUpdate
+    uow: OrdenUnitOfWork, orden_id: int, data: OrdenUpdate
 ) -> OrdenRead:
-    async with session.begin():
-        orden = await _cargar_orden(session, orden_id)
+    async with uow:
+        orden = await _cargar_orden(uow, orden_id)
         if orden.estado != PENDIENTE:
             raise Conflicto("Solo se puede actualizar una orden en estado PENDIENTE")
         cambios = data.model_dump(exclude_unset=True)
-        if cambios.get("mecanico_id") is not None:
-            await obtener_usuario(session, cambios["mecanico_id"])
+        mecanico_id = cambios.get("mecanico_id")
+        if mecanico_id is not None:
+            if await uow.usuarios.get_by_id(mecanico_id) is None:
+                raise NoEncontrado("El usuario indicado no existe")
         for campo, valor in cambios.items():
             setattr(orden, campo, valor)
-        await session.flush()
+        await uow.flush()
         return _a_read(orden)
 
 
 async def iniciar_orden(
-    session: AsyncSession, orden_id: int, usuario_id: int
+    uow: OrdenUnitOfWork, orden_id: int, usuario_id: int
 ) -> OrdenRead:
-    async with session.begin():
-        orden = await _cargar_orden(session, orden_id)
+    async with uow:
+        orden = await _cargar_orden(uow, orden_id)
         if orden.estado != PENDIENTE:
             raise Conflicto("Solo se puede iniciar una orden en estado PENDIENTE")
-        await obtener_usuario(session, usuario_id)
+        if await uow.usuarios.get_by_id(usuario_id) is None:
+            raise NoEncontrado("El usuario indicado no existe")
         if orden.mecanico_id is None:
             orden.mecanico_id = usuario_id
-        await _cambiar_estado(session, orden, EN_REPARACION, usuario_id)
-        await session.flush()
+        await _cambiar_estado(uow, orden, EN_REPARACION, usuario_id)
+        await uow.flush()
         return _a_read(orden)
 
 
 async def cancelar_orden(
-    session: AsyncSession, orden_id: int, usuario_id: int
+    uow: OrdenUnitOfWork, orden_id: int, usuario_id: int
 ) -> OrdenRead:
-    async with session.begin():
-        orden = await _cargar_orden(session, orden_id)
+    async with uow:
+        orden = await _cargar_orden(uow, orden_id)
         if orden.estado != PENDIENTE:
             raise Conflicto("Solo se puede cancelar una orden en estado PENDIENTE")
-        await obtener_usuario(session, usuario_id)
-        await _cambiar_estado(session, orden, CANCELADA, usuario_id)
-        await session.flush()
+        if await uow.usuarios.get_by_id(usuario_id) is None:
+            raise NoEncontrado("El usuario indicado no existe")
+        await _cambiar_estado(uow, orden, CANCELADA, usuario_id)
+        await uow.flush()
         return _a_read(orden)
 
 
 async def terminar_orden(
-    session: AsyncSession, orden_id: int, usuario_id: int
+    uow: OrdenUnitOfWork, orden_id: int, usuario_id: int
 ) -> OrdenRead:
-    async with session.begin():
-        orden = await _cargar_orden(session, orden_id, bloquear=True)
+    async with uow:
+        orden = await _cargar_orden(uow, orden_id, bloquear=True)
         if orden.estado != EN_REPARACION:
             raise Conflicto("Solo se puede terminar una orden en estado EN_REPARACION")
-        await obtener_usuario(session, usuario_id)
-        await _obtener_estado(session, TERMINADA)
+        if await uow.usuarios.get_by_id(usuario_id) is None:
+            raise NoEncontrado("El usuario indicado no existe")
+        await _obtener_estado(uow, TERMINADA)
 
         repuesto_ids = [item.repuesto_id for item in orden.items]
-        repuestos = list(
-            await session.scalars(
-                select(Repuesto)
-                .where(Repuesto.id.in_(repuesto_ids))
-                .with_for_update()
-            )
-        )
+        repuestos = await uow.ordenes.get_repuestos(repuesto_ids, lock=True)
         por_id = {repuesto.id: repuesto for repuesto in repuestos}
 
         for item in orden.items:
@@ -319,18 +272,15 @@ async def terminar_orden(
 
         for item in orden.items:
             repuesto = por_id[item.repuesto_id]
-            repuesto.stock -= item.cantidad
-            session.add(
-                MovimientoStock(
-                    repuesto_id=repuesto.id,
-                    orden_id=orden.id,
-                    usuario_id=usuario_id,
-                    cantidad=-item.cantidad,
-                    motivo="terminación",
-                    cuando=_ahora(),
-                )
+            await registrar_movimiento_stock(
+                uow,
+                repuesto,
+                cantidad=-item.cantidad,
+                motivo="terminación",
+                usuario_id=usuario_id,
+                orden_id=orden.id,
             )
 
-        await _cambiar_estado(session, orden, TERMINADA, usuario_id)
-        await session.flush()
+        await _cambiar_estado(uow, orden, TERMINADA, usuario_id)
+        await uow.flush()
         return _a_read(orden)

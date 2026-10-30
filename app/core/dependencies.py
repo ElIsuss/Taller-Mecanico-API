@@ -5,13 +5,12 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
 from app.core.database import get_session
 from app.core.security import decode_access_token
-from app.modules.usuarios.models import AsignacionRol, Usuario
+from app.modules.usuarios.models import Usuario
+from app.modules.usuarios.unit_of_work import UsuarioUnitOfWork
 
 
 async def get_current_user(
@@ -49,10 +48,9 @@ async def get_current_user(
             detail="Not authenticated",
         )
 
-    result = await session.execute(
-        select(Usuario).where(Usuario.id == user_id_int)
-    )
-    usuario = result.scalar_one_or_none()
+    uow = UsuarioUnitOfWork(session=session)
+    async with uow:
+        usuario = await uow.usuarios.get_by_id(user_id_int)
 
     if usuario is None:
         raise HTTPException(
@@ -83,14 +81,10 @@ async def obtener_roles_vigentes(
     usuario_id: int,
 ) -> list[str]:
     """Consulta rol/roles vigentes en la base para el usuario autenticado."""
-    stmt = (
-        select(AsignacionRol.rol)
-        .where(AsignacionRol.usuario_id == usuario_id)
-        .where(AsignacionRol.revocada_en.is_(None))
-        .where(or_(AsignacionRol.vence_en.is_(None), AsignacionRol.vence_en > func.now()))
-    )
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    uow = UsuarioUnitOfWork(session=session)
+    async with uow:
+        asignaciones = await uow.asignaciones_rol.list_active_for_user(usuario_id)
+        return [asignacion.rol for asignacion in asignaciones]
 
 
 def requiere_rol(*roles_permitidos: str):

@@ -17,10 +17,18 @@ from app.modules.repuestos.schemas import (
     RepuestoRead,
     RepuestoUpdate,
 )
+from app.modules.repuestos.unit_of_work import RepuestoUnitOfWork
 
 router = APIRouter(prefix="/repuestos", tags=["repuestos"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def get_repuesto_uow(session: SessionDep) -> RepuestoUnitOfWork:
+    return RepuestoUnitOfWork(session=session)
+
+
+RepuestoUowDep = Annotated[RepuestoUnitOfWork, Depends(get_repuesto_uow)]
 RepuestoId = Annotated[int, Path(ge=1)]
 
 
@@ -32,12 +40,12 @@ RepuestoId = Annotated[int, Path(ge=1)]
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"))],
 )
 async def listar_repuestos(
-    session: SessionDep,
+    uow: RepuestoUowDep,
     params: Annotated[PaginaParams, Depends()],
     q: Annotated[str | None, Query(max_length=200)] = None,
 ) -> Pagina[RepuestoRead]:
     repuestos, total = await service.listar_repuestos(
-        session, params.offset, params.size, q
+        uow, params.offset, params.size, q
     )
     return construir_pagina(
         [RepuestoRead.model_validate(r) for r in repuestos], total, params
@@ -53,9 +61,9 @@ async def listar_repuestos(
     dependencies=[Depends(requiere_rol("ADMIN"))],
 )
 async def crear_repuesto(
-    data: RepuestoCreate, session: SessionDep
+    data: RepuestoCreate, uow: RepuestoUowDep
 ) -> RepuestoRead:
-    repuesto = await service.crear_repuesto(session, data)
+    repuesto = await service.crear_repuesto(uow, data)
     return RepuestoRead.model_validate(repuesto)
 
 
@@ -67,9 +75,9 @@ async def crear_repuesto(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"))],
 )
 async def obtener_repuesto(
-    repuesto_id: RepuestoId, session: SessionDep
+    repuesto_id: RepuestoId, uow: RepuestoUowDep
 ) -> RepuestoRead:
-    repuesto = await service.obtener_repuesto(session, repuesto_id)
+    repuesto = await service.obtener_repuesto(uow, repuesto_id)
     return RepuestoRead.model_validate(repuesto)
 
 
@@ -81,9 +89,9 @@ async def obtener_repuesto(
     dependencies=[Depends(requiere_rol("ADMIN"))],
 )
 async def actualizar_repuesto(
-    repuesto_id: RepuestoId, data: RepuestoUpdate, session: SessionDep
+    repuesto_id: RepuestoId, data: RepuestoUpdate, uow: RepuestoUowDep
 ) -> RepuestoRead:
-    repuesto = await service.actualizar_repuesto(session, repuesto_id, data)
+    repuesto = await service.actualizar_repuesto(uow, repuesto_id, data)
     return RepuestoRead.model_validate(repuesto)
 
 
@@ -95,8 +103,8 @@ async def actualizar_repuesto(
     description="Da de baja lógica un repuesto del catálogo.",
     dependencies=[Depends(requiere_rol("ADMIN"))],
 )
-async def borrar_repuesto(repuesto_id: RepuestoId, session: SessionDep) -> Response:
-    await service.borrar_repuesto(session, repuesto_id)
+async def borrar_repuesto(repuesto_id: RepuestoId, uow: RepuestoUowDep) -> Response:
+    await service.borrar_repuesto(uow, repuesto_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -111,9 +119,9 @@ async def borrar_repuesto(repuesto_id: RepuestoId, session: SessionDep) -> Respo
 async def reponer_stock(
     repuesto_id: RepuestoId,
     data: ReposicionCreate,
-    session: SessionDep,
+    uow: RepuestoUowDep,
 ) -> MovimientoStockRead:
-    movimiento = await service.reponer_stock(session, repuesto_id, data)
+    movimiento = await service.reponer_stock(uow, repuesto_id, data)
     return MovimientoStockRead.model_validate(movimiento)
 
 
@@ -126,11 +134,11 @@ async def reponer_stock(
 )
 async def listar_movimientos(
     repuesto_id: RepuestoId,
-    session: SessionDep,
+    uow: RepuestoUowDep,
     params: Annotated[PaginaParams, Depends()],
 ) -> Pagina[MovimientoStockRead]:
     movimientos, total = await service.listar_movimientos(
-        session, repuesto_id, params.offset, params.size
+        uow, repuesto_id, params.offset, params.size
     )
     return construir_pagina(
         [MovimientoStockRead.model_validate(m) for m in movimientos],
@@ -148,11 +156,11 @@ async def listar_movimientos(
 )
 async def listar_historial_precios(
     repuesto_id: RepuestoId,
-    session: SessionDep,
+    uow: RepuestoUowDep,
     params: Annotated[PaginaParams, Depends()],
 ) -> Pagina[HistorialPrecioRead]:
     historial, total = await service.listar_historial_precios(
-        session, repuesto_id, params.offset, params.size
+        uow, repuesto_id, params.offset, params.size
     )
     return construir_pagina(
         [HistorialPrecioRead.model_validate(h) for h in historial], total, params

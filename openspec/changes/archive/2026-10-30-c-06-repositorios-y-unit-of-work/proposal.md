@@ -8,6 +8,8 @@ La arquitectura funcional del proyecto ya establece el flujo Router → Service 
 - Implementar `UnitOfWork` transaccional para manejar `commit()`, `rollback()`, cierre y unión de repositorios por dominio.
 - Agregar repositorios para los módulos de `usuarios`, `clientes`, `repuestos` y `ordenes`, incluyendo soporte de borrado lógico para entidades con `borrado_en`.
 - Definir wrapper de UoW por dominio para que las operaciones de negocio se ejecuten dentro de la misma sesión y transacción.
+- Inyectar los UoW desde los routers y migrar las operaciones transaccionales de los servicios a los repositorios.
+- Centralizar los cambios de stock en la creación de movimientos, incluida la terminación de órdenes.
 - Mantener la regla no negociable: los repositorios nunca hacen `commit`, y el `Unit of Work` confirma al cerrar el bloque.
 
 ## Capabilities
@@ -29,4 +31,4 @@ La arquitectura funcional del proyecto ya establece el flujo Router → Service 
 - `app/modules/repuestos/repository.py`
 - `app/modules/ordenes/repository.py`
 - `app/modules/*/unit_of_work.py`
-- Servicios que lleguen a usar el patrón UoW con repositorios por dominio.
+- Servicios y routers de los módulos `usuarios`, `clientes`, `repuestos` y `ordenes`.

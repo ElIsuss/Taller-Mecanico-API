@@ -51,3 +51,18 @@ El sistema SHALL garantizar que ningún repositorio haga `commit()` por sí mism
 #### Scenario: Transacción multi-acción
 - **WHEN** una operación necesita guardar varias entidades en una misma unidad transaccional
 - **THEN** la persistencia se resuelve con `flush()` local y la confirmación final ocurre al cerrar el UoW
+
+### Requirement: Servicios transaccionales integrados con repositorios y UoW
+El sistema SHALL inyectar un UoW del dominio desde el router, y los servicios SHALL abrirlo con `async with` y realizar el acceso transaccional a datos mediante los repositorios del UoW.
+
+#### Scenario: Operación de negocio exitosa
+- **WHEN** un servicio ejecuta una operación transaccional mediante repositorios del UoW
+- **THEN** todos los cambios se confirman juntos al salir correctamente del contexto
+
+#### Scenario: Operación de negocio fallida
+- **WHEN** una operación de servicio falla antes de completar sus cambios
+- **THEN** el UoW revierte toda la transacción y no quedan escrituras parciales
+
+#### Scenario: Modificación de stock
+- **WHEN** una operación de negocio aumenta o disminuye el stock
+- **THEN** el cambio se realiza a través del registro de un movimiento dentro del mismo UoW
