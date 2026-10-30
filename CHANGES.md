@@ -173,7 +173,7 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
   - `knowledge-base/08_arquitectura_propuesta.md` (§Seguridad)
 
 ### [C-05] `autorizacion`
-- **Estado**: `[ ]` pendiente
+- **Estado**: `[x]` completado
 - **Puntos**: 14 | **Orden sugerido**: 5
 - **Scope**:
   - `get_usuario_actual` → 401 si no hay sesión válida
@@ -196,7 +196,7 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
 > Nota: `C-06` requiere `C-02` y `C-03` (GATE 3). `C-07` requiere `C-06` y `C-02` (GATE 4).
 
 ### [C-06] `repositorios-y-unit-of-work`
-- **Estado**: `[ ]` pendiente
+- **Estado**: `[x]` completado
 - **Puntos**: 20 | **Orden sugerido**: 6
 - **Scope**:
   - `BaseRepository[T]` + `SoftDeleteRepository[T]` (solo `flush()`, nunca `commit()`)

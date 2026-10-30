@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.dependencies import requiere_rol
 from app.core.pagination import Pagina, PaginaParams, construir_pagina
 from app.modules.repuestos import service
 from app.modules.repuestos.schemas import (
@@ -28,6 +29,7 @@ RepuestoId = Annotated[int, Path(ge=1)]
     response_model=Pagina[RepuestoRead],
     summary="Listar repuestos",
     description="Devuelve los repuestos vigentes, con búsqueda opcional por descripción.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"))],
 )
 async def listar_repuestos(
     session: SessionDep,
@@ -48,6 +50,7 @@ async def listar_repuestos(
     status_code=status.HTTP_201_CREATED,
     summary="Crear repuesto",
     description="Da de alta un repuesto del catálogo.",
+    dependencies=[Depends(requiere_rol("ADMIN"))],
 )
 async def crear_repuesto(
     data: RepuestoCreate, session: SessionDep
@@ -61,6 +64,7 @@ async def crear_repuesto(
     response_model=RepuestoRead,
     summary="Consultar repuesto",
     description="Devuelve un repuesto vigente por su identificador.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO", "CLIENTE"))],
 )
 async def obtener_repuesto(
     repuesto_id: RepuestoId, session: SessionDep
@@ -74,6 +78,7 @@ async def obtener_repuesto(
     response_model=RepuestoRead,
     summary="Actualizar repuesto",
     description="Actualiza la descripción o el precio; el stock solo cambia por reposición.",
+    dependencies=[Depends(requiere_rol("ADMIN"))],
 )
 async def actualizar_repuesto(
     repuesto_id: RepuestoId, data: RepuestoUpdate, session: SessionDep
@@ -88,6 +93,7 @@ async def actualizar_repuesto(
     response_class=Response,
     summary="Dar de baja repuesto",
     description="Da de baja lógica un repuesto del catálogo.",
+    dependencies=[Depends(requiere_rol("ADMIN"))],
 )
 async def borrar_repuesto(repuesto_id: RepuestoId, session: SessionDep) -> Response:
     await service.borrar_repuesto(session, repuesto_id)
@@ -100,6 +106,7 @@ async def borrar_repuesto(repuesto_id: RepuestoId, session: SessionDep) -> Respo
     status_code=status.HTTP_200_OK,
     summary="Reponer stock",
     description="Registra un movimiento positivo y aumenta el stock del repuesto.",
+    dependencies=[Depends(requiere_rol("ADMIN"))],
 )
 async def reponer_stock(
     repuesto_id: RepuestoId,
@@ -115,6 +122,7 @@ async def reponer_stock(
     response_model=Pagina[MovimientoStockRead],
     summary="Movimientos de stock",
     description="Devuelve los movimientos del repuesto, del más reciente al más antiguo.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO"))],
 )
 async def listar_movimientos(
     repuesto_id: RepuestoId,
@@ -136,6 +144,7 @@ async def listar_movimientos(
     response_model=Pagina[HistorialPrecioRead],
     summary="Historial de precios",
     description="Devuelve los cambios de precio del repuesto, del más reciente al más antiguo.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "MECANICO"))],
 )
 async def listar_historial_precios(
     repuesto_id: RepuestoId,

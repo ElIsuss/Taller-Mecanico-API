@@ -2,6 +2,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from app.core.config import settings
+from app.core.unit_of_work import UnitOfWork
 
 # Metadata de SQLModel expuesto hacia Alembic (autogenerate).
 # Los modelos deben importarse (p.ej. desde migrations/env.py) para que
@@ -33,3 +34,9 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
     from app.main import app
     async with app.state.async_session_maker() as session:
         yield session
+
+
+async def get_uow() -> UnitOfWork:
+    """Create a UnitOfWork that owns its own async session."""
+    from app.main import app
+    return UnitOfWork(session_factory=app.state.async_session_maker)

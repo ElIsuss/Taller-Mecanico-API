@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Path, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.dependencies import requiere_rol
 from app.core.pagination import Pagina, PaginaParams, construir_pagina
 from app.modules.clientes import service
 from app.modules.clientes.schemas import (
@@ -32,6 +33,7 @@ VehiculoId = Annotated[int, Path(ge=1)]
     response_model=Pagina[ClienteRead],
     summary="Listar clientes",
     description="Devuelve los clientes de forma paginada.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def listar_clientes(
     session: SessionDep,
@@ -51,6 +53,7 @@ async def listar_clientes(
     status_code=status.HTTP_201_CREATED,
     summary="Crear cliente",
     description="Da de alta una ficha de cliente.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def crear_cliente(
     data: ClienteCreate, session: SessionDep
@@ -64,6 +67,7 @@ async def crear_cliente(
     response_model=ClienteDetalleRead,
     summary="Consultar cliente",
     description="Devuelve un cliente con sus vehículos por su identificador.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def obtener_cliente(
     cliente_id: ClienteId, session: SessionDep
@@ -78,6 +82,7 @@ async def obtener_cliente(
     status_code=status.HTTP_201_CREATED,
     summary="Crear vehículo de un cliente",
     description="Da de alta un vehículo asociado al cliente indicado.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def crear_vehiculo_de_cliente(
     cliente_id: ClienteId,
@@ -95,6 +100,7 @@ async def crear_vehiculo_de_cliente(
     response_model=ClienteRead,
     summary="Actualizar cliente",
     description="Actualiza solo los campos enviados del cliente.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def actualizar_cliente(
     cliente_id: ClienteId, data: ClienteUpdate, session: SessionDep
@@ -109,6 +115,7 @@ async def actualizar_cliente(
     response_class=Response,
     summary="Borrar cliente",
     description="Borra el cliente si no tiene vehículos asociados.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def borrar_cliente(cliente_id: ClienteId, session: SessionDep) -> Response:
     await service.borrar_cliente(session, cliente_id)
@@ -120,6 +127,7 @@ async def borrar_cliente(cliente_id: ClienteId, session: SessionDep) -> Response
     response_model=Pagina[VehiculoRead],
     summary="Listar vehículos",
     description="Devuelve los vehículos vigentes de forma paginada.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def listar_vehiculos(
     session: SessionDep,
@@ -140,6 +148,7 @@ async def listar_vehiculos(
     status_code=status.HTTP_201_CREATED,
     summary="Crear vehículo",
     description="Da de alta un vehículo asociado a un cliente.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def crear_vehiculo(
     data: VehiculoCreate, session: SessionDep
@@ -153,6 +162,7 @@ async def crear_vehiculo(
     response_model=VehiculoRead,
     summary="Consultar vehículo",
     description="Devuelve un vehículo vigente por su identificador.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def obtener_vehiculo(
     vehiculo_id: VehiculoId, session: SessionDep
@@ -166,6 +176,7 @@ async def obtener_vehiculo(
     response_model=VehiculoRead,
     summary="Actualizar vehículo",
     description="Actualiza solo los campos enviados del vehículo.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def actualizar_vehiculo(
     vehiculo_id: VehiculoId, data: VehiculoUpdate, session: SessionDep
@@ -180,6 +191,7 @@ async def actualizar_vehiculo(
     response_class=Response,
     summary="Dar de baja vehículo",
     description="Da de baja lógica un vehículo sin órdenes abiertas.",
+    dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION"))],
 )
 async def borrar_vehiculo(vehiculo_id: VehiculoId, session: SessionDep) -> Response:
     await service.borrar_vehiculo(session, vehiculo_id)

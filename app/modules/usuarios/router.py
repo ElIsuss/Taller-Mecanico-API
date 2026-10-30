@@ -10,14 +10,89 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, requiere_rol
 from app.core.security import delete_access_token_cookie, set_access_token_cookie
 from app.modules.usuarios import schemas, service
-from app.modules.usuarios.models import AsignacionRol, Usuario
+from app.modules.usuarios.models import AsignacionRol, EventoSeguridad, Usuario
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+@router.post(
+    "/roles/asignar",
+    response_model=dict,
+    status_code=status.HTTP_201_CREATED,
+    summary="Asignar rol a usuario",
+    description="Otorga un rol vigente a un usuario. Solo administradores pueden hacerlo.",
+)
+async def asignar_rol(
+    data: schemas.AsignarRol,
+    session: SessionDep,
+    current_usuario: Usuario = Depends(requiere_rol("ADMIN")),
+) -> dict[str, str | int]:
+    asignacion = await service.asignar_rol_usuario(
+        session,
+        data.usuario_id,
+        data.rol,
+        current_usuario.id,
+    )
+    return {
+        "usuario_id": asignacion.usuario_id,
+        "rol": asignacion.rol,
+        "otorgada_por": asignacion.otorgada_por,
+    }
+
+
+@router.post(
+    "/roles/revocar",
+    response_model=dict,
+    status_code=status.HTTP_200_OK,
+    summary="Revocar rol a usuario",
+    description="Revoca una asignación vigente de rol con autoprotección de administradores.",
+)
+async def revocar_rol(
+    data: schemas.RevocarRol,
+    session: SessionDep,
+    current_usuario: Usuario = Depends(requiere_rol("ADMIN")),
+) -> dict[str, str | int | None]:
+    asignacion = await service.revocar_rol_usuario(
+        session,
+        data.usuario_id,
+        data.rol,
+        current_usuario.id,
+    )
+    return {
+        "usuario_id": asignacion.usuario_id,
+        "rol": asignacion.rol,
+        "revocada_en": asignacion.revocada_en,
+    }
+
+
+@router.get(
+    "/eventos-seguridad",
+    response_model=list[schemas.EventoSeguridadRead],
+    summary="Eventos de seguridad",
+    description="Lista los eventos de seguridad registrados por la auditoría del sistema.",
+)
+async def listar_eventos_seguridad(
+    session: SessionDep,
+    current_usuario: Usuario = Depends(requiere_rol("ADMIN")),
+) -> list[schemas.EventoSeguridadRead]:
+    del current_usuario
+    stmt = select(EventoSeguridad).order_by(EventoSeguridad.cuando.desc())
+    result = await session.execute(stmt)
+    eventos = result.scalars().all()
+    return [
+        schemas.EventoSeguridadRead(
+            id=e.id,
+            cuando=e.cuando,
+            actor=e.actor,
+            accion=e.accion,
+        )
+        for e in eventos
+    ]
 
 
 @router.post(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -18,7 +18,12 @@ from app.core.security import (
 )
 from app.modules.clientes.models import Cliente
 from app.modules.usuarios import schemas
-from app.modules.usuarios.models import AsignacionRol, IntentoAcceso, Usuario
+from app.modules.usuarios.models import (
+    AsignacionRol,
+    EventoSeguridad,
+    IntentoAcceso,
+    Usuario,
+)
 
 
 async def obtener_usuario(session: AsyncSession, usuario_id: int) -> Usuario:
@@ -28,6 +33,113 @@ async def obtener_usuario(session: AsyncSession, usuario_id: int) -> Usuario:
     if usuario is None:
         raise NoEncontrado("El usuario indicado no existe")
     return usuario
+
+
+async def obtener_roles_vigentes(session: AsyncSession, usuario_id: int) -> list[str]:
+    """Devuelve los roles activos en la base para un usuario."""
+    stmt = (
+        select(AsignacionRol.rol)
+        .where(AsignacionRol.usuario_id == usuario_id)
+        .where(AsignacionRol.revocada_en.is_(None))
+        .where(or_(AsignacionRol.vence_en.is_(None), AsignacionRol.vence_en > func.now()))
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def registrar_evento_seguridad(
+    session: AsyncSession,
+    actor: str,
+    accion: str,
+) -> EventoSeguridad:
+    """Registra un evento crítico de seguridad en la auditoría."""
+    evento = EventoSeguridad(actor=actor, accion=accion)
+    session.add(evento)
+    await session.flush()
+    return evento
+
+
+async def asignar_rol_usuario(
+    session: AsyncSession,
+    usuario_id: int,
+    rol: str,
+    actor_id: int,
+) -> AsignacionRol:
+    """Otorga un rol vigente a un usuario con validaciones RN-03 y RN-05."""
+    rol_norm = str(rol).upper()
+    if rol_norm not in {"ADMIN", "RECEPCION", "MECANICO", "CLIENTE"}:
+        raise Conflicto("Rol no válido")
+
+    usuario = await obtener_usuario(session, usuario_id)
+    stmt = (
+        select(AsignacionRol)
+        .where(AsignacionRol.usuario_id == usuario.id)
+        .where(AsignacionRol.rol == rol_norm)
+        .where(AsignacionRol.revocada_en.is_(None))
+        .where(or_(AsignacionRol.vence_en.is_(None), AsignacionRol.vence_en > func.now()))
+    )
+    existente = (await session.execute(stmt)).scalar_one_or_none()
+    if existente is not None:
+        raise Conflicto("El usuario ya tiene este rol vigente")
+
+    asignacion = AsignacionRol(
+        usuario_id=usuario.id,
+        rol=rol_norm,
+        otorgada_por=actor_id,
+    )
+    session.add(asignacion)
+    await session.flush()
+    await registrar_evento_seguridad(
+        session,
+        str(actor_id),
+        f"ASIGNAR_ROL:{usuario.id}:{rol_norm}",
+    )
+    return asignacion
+
+
+async def revocar_rol_usuario(
+    session: AsyncSession,
+    usuario_id: int,
+    rol: str,
+    actor_id: int,
+) -> AsignacionRol:
+    """Revoca una asignación vigente de rol con autoprotección ADMIN."""
+    rol_norm = str(rol).upper()
+    if rol_norm not in {"ADMIN", "RECEPCION", "MECANICO", "CLIENTE"}:
+        raise Conflicto("Rol no válido")
+
+    stmt = (
+        select(AsignacionRol)
+        .where(AsignacionRol.usuario_id == usuario_id)
+        .where(AsignacionRol.rol == rol_norm)
+        .where(AsignacionRol.revocada_en.is_(None))
+        .where(or_(AsignacionRol.vence_en.is_(None), AsignacionRol.vence_en > func.now()))
+    )
+    asignacion = (await session.execute(stmt)).scalar_one_or_none()
+    if asignacion is None:
+        raise NoEncontrado("No existe un rol vigente para revocar")
+
+    if usuario_id == actor_id and rol_norm == "ADMIN":
+        raise Conflicto("No puedes revocar tu propio rol ADMIN")
+
+    if rol_norm == "ADMIN":
+        admins = await session.execute(
+            select(AsignacionRol)
+            .where(AsignacionRol.rol == "ADMIN")
+            .where(AsignacionRol.revocada_en.is_(None))
+            .where(or_(AsignacionRol.vence_en.is_(None), AsignacionRol.vence_en > func.now()))
+        )
+        if len(admins.scalars().all()) <= 1:
+            raise Conflicto("El sistema no puede quedar sin administradores")
+
+    asignacion.revocada_en = datetime.now(timezone.utc)
+    await session.flush()
+    await registrar_evento_seguridad(
+        session,
+        str(actor_id),
+        f"REVOCAR_ROL:{usuario_id}:{rol_norm}",
+    )
+    return asignacion
 
 
 async def chequear_bloqueo(

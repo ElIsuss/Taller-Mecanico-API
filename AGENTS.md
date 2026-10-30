@@ -82,6 +82,6 @@ Reglas confirmadas derivadas del stack (Python 3.12 + FastAPI 0.111):
 
 ## Flujo de Trabajo
 
-`KB (knowledge-base/)` → `CHANGES.md` → `/opsx:propose <change>` → `/opsx:apply <change>` → `/opsx:archive <change>`
+`KB (knowledge-base/)` → `CHANGES.md` → `/opsx:explore <idea>` → `/opsx:propose <change>` → `/opsx:apply <change>` → `/opsx:verify <change>` → `/opsx:archive <change>`
 
 Antes de ejecutar cualquier `/opsx:propose`, leer `CHANGES.md` y los punteros "Leer antes" de la knowledge-base indicados en el change.

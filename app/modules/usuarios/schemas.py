@@ -5,9 +5,12 @@ Pydantic V2 con extra="forbid": ningún endpoint acepta campos no declarados.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+Rol = Literal["ADMIN", "RECEPCION", "MECANICO", "CLIENTE"]
 
 
 class Login(BaseModel):
@@ -71,8 +74,37 @@ class Me(BaseModel):
     id: int
     email: str
     nombre: str
-    rol: Literal["ADMIN", "RECEPCION", "MECANICO", "CLIENTE"]
+    rol: Rol
     iat: float | int
+
+
+class AsignarRol(BaseModel):
+    """Asignación de un rol a un usuario."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    usuario_id: int = Field(..., ge=1)
+    rol: Rol
+
+
+class RevocarRol(BaseModel):
+    """Revocación de una asignación vigente de rol."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    usuario_id: int = Field(..., ge=1)
+    rol: Rol
+
+
+class EventoSeguridadRead(BaseModel):
+    """Registro de auditoría de seguridad."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    cuando: datetime
+    actor: str
+    accion: str
 
 
 class TokenData(BaseModel):
