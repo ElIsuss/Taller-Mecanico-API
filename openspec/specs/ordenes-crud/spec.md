@@ -1,4 +1,4 @@
-# ordenes-crud Specification
+﻿# ordenes-crud Specification
 
 ## Purpose
 
@@ -7,7 +7,7 @@ Expone la apertura, consulta, actualización básica y el ciclo de vida de las �
 ## Requirements
 
 ### Requirement: Apertura de orden con ítems
-El sistema SHALL crear una orden en estado PENDIENTE con `vehiculo_id`, `falla`, al menos un ítem y `usuario_id` (actor), copiando el precio vigente de cada repuesto y calculando el total en el servidor.
+El sistema SHALL crear una orden en estado PENDIENTE con `vehiculo_id`, `falla` y al menos un ítem, sin `usuario_id` en el cuerpo; el actor se obtiene del usuario autenticado (o, mientras C-04/C-05 no estén implementados, del usuario vinculado al cliente). SHALL copiar el precio vigente de cada repuesto y calcular el total en el servidor.
 
 #### Scenario: Alta válida
 - **WHEN** se envía `POST /ordenes` con un vehículo vigente, falla, un ítem y un usuario existente
@@ -34,17 +34,17 @@ El sistema SHALL crear una orden en estado PENDIENTE con `vehiculo_id`, `falla`,
 - **THEN** el `total` devuelto es 41.00, sin confiar en un total enviado por el cliente
 
 ### Requirement: Consulta y listado de órdenes
-El sistema SHALL permitir consultar una orden por id (con sus ítems) y listar órdenes de forma paginada, opcionalmente filtradas por `estado` y `vehiculo_id`.
+El sistema SHALL permitir consultar una orden por id y listar órdenes de forma paginada, opcionalmente filtradas por `estado` (enum de la tabla `estado_orden`) y `vehiculo_id`. Las respuestas SHALL incluir `patente`, `cliente`, `historial` e ítems enriquecidos.
 
 #### Scenario: Detalle de orden
 - **WHEN** se consulta `GET /ordenes/{id}`
-- **THEN** la API responde 200 con la orden, su estado, su total y sus ítems
+- **THEN** la API responde 200 con la orden, `patente`, `cliente`, su estado, total, ítems con `codigo`/`descripcion`/`subtotal` e historial
 
 #### Scenario: Filtro por estado
 - **WHEN** se consulta `GET /ordenes?estado=PENDIENTE`
 - **THEN** la respuesta solo incluye órdenes en ese estado
 
-#### Scenario: Orden inexistente
+#### Scenario: Estado de filtro inválido\n- **WHEN** se consulta `GET /ordenes?estado=NO_EXISTE`\n- **THEN** la API responde 422\n\n#### Scenario: Orden inexistente
 - **WHEN** se consulta un id que no existe
 - **THEN** la API responde 404
 

@@ -38,9 +38,9 @@ class PaginaParams:
 
 
 def calcular_pages(total: int, size: int) -> int:
-    """Cantidad de páginas; 0 cuando no hay elementos."""
+    """Cantidad de páginas; con cero elementos hay una página vacía."""
     if total <= 0:
-        return 0
+        return 1
     return ceil(total / size)
 
 
@@ -51,8 +51,10 @@ def construir_pagina(
 ) -> Pagina[T]:
     """Arma la página y rechaza números de página fuera de rango."""
     pages = calcular_pages(total, params.size)
-    if params.page > max(pages, 1):
-        raise Invalido("La página solicitada está fuera de rango")
+    if params.page > pages:
+        raise Invalido(
+            f"La página {params.page} no existe: hay {pages}"
+        )
     return Pagina(
         items=items,
         total=total,

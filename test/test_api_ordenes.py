@@ -6,7 +6,8 @@ import pytest
 from sqlalchemy import select
 
 from app.main import app
-from app.modules.ordenes.models import HistorialEstadoOrden, MovimientoStock
+from app.modules.ordenes.models import HistorialEstadoOrden
+from app.modules.repuestos.models import MovimientoStock
 
 
 async def _crear_orden(client, seed, cantidad: int = 3, stock: int = 10):
@@ -70,8 +71,21 @@ async def test_ciclo_completo_de_orden(client, seed):
     orden = creada.json()
     assert orden["estado"] == "PENDIENTE"
     assert Decimal(orden["total"]) == Decimal("41.00")
+    assert orden["patente"] == vehiculo.patente
+    assert orden["cliente"] == cliente.nombre
     assert len(orden["items"]) == 2
     assert orden["mecanico_id"] is None
+    item = next(i for i in orden["items"] if i["repuesto_id"] == r1.id)
+    assert {"repuesto_id", "codigo", "descripcion", "cantidad", "precio_unitario", "subtotal"} <= set(item)
+    assert Decimal(item["subtotal"]) == Decimal("30.00")
+    assert orden["historial"] == [
+        {
+            "desde_estado": None,
+            "hasta_estado": "PENDIENTE",
+            "usuario_id": usuario.id,
+            "cuando": orden["historial"][0]["cuando"],
+        }
+    ]
 
     detalle = await client.get(f"/ordenes/{orden['id']}")
     assert detalle.status_code == 200
@@ -237,13 +251,13 @@ async def test_validaciones_de_apertura(client, seed):
     vehiculo_inexistente = await client.post(
         "/ordenes", json={**base, "vehiculo_id": 999999}
     )
-    assert vehiculo_inexistente.status_code == 404
+    assert vehiculo_inexistente.status_code == 409
 
     repuesto_inexistente = await client.post(
         "/ordenes",
         json={**base, "items": [{"repuesto_id": 999999, "cantidad": 1}]},
     )
-    assert repuesto_inexistente.status_code == 404
+    assert repuesto_inexistente.status_code == 409
 
     usuario_inexistente = await client.post(
         "/ordenes", json={**base, "usuario_id": 999999}
@@ -282,6 +296,33 @@ async def test_no_se_puede_abrir_orden_con_dados_de_baja(client, seed):
         },
     )
     assert con_repuesto_borrado.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_body_de_referencia_sin_usuario_id(client, seed):
+    usuario = await seed.usuario(nombre="Laura Gómez")
+    cliente = await seed.cliente(nombre="Ana Pérez", usuario_id=usuario.id)
+    vehiculo = await seed.vehiculo(cliente.id, patente="AB123CD")
+    repuesto = await seed.repuesto(codigo="REP-001", descripcion="Filtro", precio="10.00")
+
+    creada = await client.post(
+        "/ordenes",
+        json={
+            "vehiculo_id": vehiculo.id,
+            "falla": "Ruido en motor",
+            "items": [{"repuesto_id": repuesto.id, "cantidad": 2}],
+        },
+    )
+    assert creada.status_code == 201
+    orden = creada.json()
+    assert orden["patente"] == "AB123CD"
+    assert orden["cliente"] == "Ana Pérez"
+    assert orden["historial"][0]["usuario_id"] == usuario.id
+
+
+@pytest.mark.asyncio
+async def test_filtro_de_estado_invalido_devuelve_422(client):
+    assert (await client.get("/ordenes?estado=NO_EXISTE")).status_code == 422
 
 
 @pytest.mark.asyncio

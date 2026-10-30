@@ -19,7 +19,7 @@ async def test_login_exitoso(client):
     """Login con credenciales válidas.
 
     - Retorna 200 OK
-    - Cookie `access_token` con HttpOnly, SameSite=Lax, Max-Age
+    - Cookie `access_token` con HttpOnly, SameSite=lax, Max-Age
     - Body contiene los datos del usuario (sin password_hash)
     """
     # Credenciales de test: un usuario creado por la fixture db_ready
@@ -51,7 +51,7 @@ async def test_login_exitoso(client):
     cookie = response.cookies.get("access_token")
     assert cookie is not None, "Cookie access_token no incluida en respuesta"
     assert "HttpOnly" in str(response.headers.get("set-cookie", "")), "Cookie debe tener HttpOnly"
-    assert "SameSite=Lax" in str(response.headers.get("set-cookie", "")), "Cookie debe tener SameSite=Lax"
+    assert "SameSite=lax" in str(response.headers.get("set-cookie", "")), "Cookie debe tener SameSite=lax"
 
     # Verificar response body (sin password_hash)
     data = response.json()

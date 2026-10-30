@@ -1,4 +1,4 @@
-"""Tests de integración de /repuestos (C-03 tareas 4.2 a 4.5)."""
+﻿"""Tests de integración de /repuestos (C-03 tareas 4.2 a 4.5)."""
 
 from decimal import Decimal
 
@@ -7,31 +7,38 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_crud_y_busqueda_de_repuestos(client, seed):
+    usuario = await seed.usuario()
     creado = await client.post(
         "/repuestos",
         json={
             "codigo": "REP-001",
             "descripcion": "Filtro de aceite",
             "precio": "10.00",
-            "stock": 3,
+            "stock_inicial": 3,
+            "usuario_id": usuario.id,
         },
     )
     assert creado.status_code == 201
     repuesto = creado.json()
     assert Decimal(repuesto["precio"]) == Decimal("10.00")
+    assert repuesto["stock"] == 3
     assert "borrado_en" not in repuesto
 
-    busqueda = await client.get("/repuestos?busqueda=filtro")
+    movimientos = await client.get(f"/repuestos/{repuesto['id']}/movimientos")
+    assert movimientos.status_code == 200
+    assert movimientos.json()["items"][0]["motivo"] == "Stock inicial"
+
+    busqueda = await client.get("/repuestos?q=filtro")
     assert busqueda.status_code == 200
     assert busqueda.json()["total"] == 1
 
-    sin_resultados = await client.get("/repuestos?busqueda=inexistente")
+    sin_resultados = await client.get("/repuestos?q=inexistente")
     assert sin_resultados.json() == {
         "items": [],
         "total": 0,
         "page": 1,
         "size": 20,
-        "pages": 0,
+        "pages": 1,
     }
 
 
@@ -40,7 +47,7 @@ async def test_busqueda_escapa_comodines(client, seed):
     await seed.repuesto(codigo="REP-001", descripcion="Filtro 100%")
     await seed.repuesto(codigo="REP-002", descripcion="Filtro 100x")
 
-    response = await client.get("/repuestos", params={"busqueda": "100%"})
+    response = await client.get("/repuestos", params={"q": "100%"})
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert response.json()["items"][0]["descripcion"] == "Filtro 100%"
@@ -79,6 +86,11 @@ async def test_patch_stock_y_precio_sin_actor_devuelven_422(client, seed):
     )
     assert sin_actor.status_code == 422
 
+    codigo = await client.patch(
+        f"/repuestos/{repuesto.id}", json={"codigo": "OTRO"}
+    )
+    assert codigo.status_code == 422
+
 
 @pytest.mark.asyncio
 async def test_cambio_de_precio_registra_historial(client, seed):
@@ -92,7 +104,7 @@ async def test_cambio_de_precio_registra_historial(client, seed):
     assert cambio.status_code == 200
     assert Decimal(cambio.json()["precio"]) == Decimal("12.50")
 
-    historial = await client.get(f"/repuestos/{repuesto.id}/historial-precios")
+    historial = await client.get(f"/repuestos/{repuesto.id}/precios")
     assert historial.status_code == 200
     datos = historial.json()
     assert datos["total"] == 1
@@ -106,7 +118,7 @@ async def test_cambio_de_precio_registra_historial(client, seed):
         json={"precio": "12.50", "usuario_id": usuario.id},
     )
     assert igual.status_code == 200
-    historial_igual = await client.get(f"/repuestos/{repuesto.id}/historial-precios")
+    historial_igual = await client.get(f"/repuestos/{repuesto.id}/precios")
     assert historial_igual.json()["total"] == 1
 
 
@@ -116,17 +128,21 @@ async def test_reposicion_aumenta_stock(client, seed):
     repuesto = await seed.repuesto(stock=5)
 
     reposicion = await client.post(
-        f"/repuestos/{repuesto.id}/reposiciones",
+        f"/repuestos/{repuesto.id}/reponer",
         json={"cantidad": 7, "motivo": "compra", "usuario_id": usuario.id},
     )
-    assert reposicion.status_code == 201
+    assert reposicion.status_code == 200
     assert reposicion.json()["cantidad"] == 7
 
     detalle = await client.get(f"/repuestos/{repuesto.id}")
     assert detalle.json()["stock"] == 12
 
+    movimientos = await client.get(f"/repuestos/{repuesto.id}/movimientos")
+    assert movimientos.json()["total"] == 1
+    assert movimientos.json()["items"][0]["motivo"] == "compra"
+
     invalida = await client.post(
-        f"/repuestos/{repuesto.id}/reposiciones",
+        f"/repuestos/{repuesto.id}/reponer",
         json={"cantidad": 0, "motivo": "compra", "usuario_id": usuario.id},
     )
     assert invalida.status_code == 422
@@ -139,7 +155,7 @@ async def test_reposicion_de_repuesto_borrado_devuelve_404(client, seed):
     assert (await client.delete(f"/repuestos/{repuesto.id}")).status_code == 204
 
     response = await client.post(
-        f"/repuestos/{repuesto.id}/reposiciones",
+        f"/repuestos/{repuesto.id}/reponer",
         json={"cantidad": 1, "motivo": "compra", "usuario_id": usuario.id},
     )
     assert response.status_code == 404

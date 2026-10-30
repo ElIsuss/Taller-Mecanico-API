@@ -6,14 +6,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NoEncontrado
-from app.modules.auth.service import obtener_usuario
-from app.modules.ordenes.models import HistorialPrecioRepuesto, MovimientoStock
-from app.modules.repuestos.models import Repuesto
+from app.modules.repuestos.models import (
+    HistorialPrecioRepuesto,
+    MovimientoStock,
+    Repuesto,
+)
 from app.modules.repuestos.schemas import (
     ReposicionCreate,
     RepuestoCreate,
     RepuestoUpdate,
 )
+from app.modules.usuarios.service import obtener_usuario
 
 
 def _escapar_like(texto: str) -> str:
@@ -38,21 +41,59 @@ async def obtener_repuesto(session: AsyncSession, repuesto_id: int) -> Repuesto:
 
 async def crear_repuesto(session: AsyncSession, data: RepuestoCreate) -> Repuesto:
     async with session.begin():
-        repuesto = Repuesto(**data.model_dump())
+        if data.stock_inicial > 0:
+            await obtener_usuario(session, data.usuario_id)
+        repuesto = Repuesto(
+            codigo=data.codigo,
+            descripcion=data.descripcion,
+            precio=data.precio,
+            stock=0,
+        )
         session.add(repuesto)
         await session.flush()
+        if data.stock_inicial > 0:
+            await _registrar_movimiento(
+                session,
+                repuesto,
+                cantidad=data.stock_inicial,
+                motivo="Stock inicial",
+                usuario_id=data.usuario_id,
+            )
     return repuesto
+
+
+async def _registrar_movimiento(
+    session: AsyncSession,
+    repuesto: Repuesto,
+    cantidad: int,
+    motivo: str,
+    usuario_id: int,
+    orden_id: int | None = None,
+) -> MovimientoStock:
+    """Punto único de escritura del stock (RN-14)."""
+    repuesto.stock += cantidad
+    movimiento = MovimientoStock(
+        repuesto_id=repuesto.id,
+        orden_id=orden_id,
+        usuario_id=usuario_id,
+        cantidad=cantidad,
+        motivo=motivo,
+        cuando=datetime.now(timezone.utc),
+    )
+    session.add(movimiento)
+    await session.flush()
+    return movimiento
 
 
 async def listar_repuestos(
     session: AsyncSession,
     offset: int,
     limit: int,
-    busqueda: str | None = None,
+    q: str | None = None,
 ) -> tuple[list[Repuesto], int]:
     filtros = [Repuesto.borrado_en.is_(None)]
-    if busqueda:
-        patron = f"%{_escapar_like(busqueda)}%"
+    if q:
+        patron = f"%{_escapar_like(q)}%"
         filtros.append(Repuesto.descripcion.ilike(patron, escape="\\"))
     total = await session.scalar(
         select(func.count()).select_from(Repuesto).where(*filtros)
@@ -100,17 +141,13 @@ async def reponer_stock(
     async with session.begin():
         repuesto = await obtener_repuesto(session, repuesto_id)
         await obtener_usuario(session, data.usuario_id)
-        movimiento = MovimientoStock(
-            repuesto_id=repuesto.id,
-            usuario_id=data.usuario_id,
+        return await _registrar_movimiento(
+            session,
+            repuesto,
             cantidad=data.cantidad,
             motivo=data.motivo,
-            cuando=datetime.now(timezone.utc),
+            usuario_id=data.usuario_id,
         )
-        session.add(movimiento)
-        repuesto.stock += data.cantidad
-        await session.flush()
-    return movimiento
 
 
 async def borrar_repuesto(session: AsyncSession, repuesto_id: int) -> None:
@@ -136,6 +173,28 @@ async def listar_historial_precios(
         select(HistorialPrecioRepuesto)
         .where(HistorialPrecioRepuesto.repuesto_id == repuesto_id)
         .order_by(HistorialPrecioRepuesto.cuando.desc(), HistorialPrecioRepuesto.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return list(result), int(total or 0)
+
+
+async def listar_movimientos(
+    session: AsyncSession,
+    repuesto_id: int,
+    offset: int,
+    limit: int,
+) -> tuple[list[MovimientoStock], int]:
+    await obtener_repuesto(session, repuesto_id)
+    total = await session.scalar(
+        select(func.count())
+        .select_from(MovimientoStock)
+        .where(MovimientoStock.repuesto_id == repuesto_id)
+    )
+    result = await session.scalars(
+        select(MovimientoStock)
+        .where(MovimientoStock.repuesto_id == repuesto_id)
+        .order_by(MovimientoStock.cuando.desc(), MovimientoStock.id.desc())
         .offset(offset)
         .limit(limit)
     )

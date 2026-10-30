@@ -16,14 +16,20 @@ TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 if TEST_DATABASE_URL:
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
+os.environ.setdefault("POSTGRES_HOST", "localhost")
+os.environ.setdefault("POSTGRES_USER", "postgres")
+os.environ.setdefault("POSTGRES_PASSWORD", "postgres")
+os.environ.setdefault("POSTGRES_DB", "taller_mecanico")
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("FIRST_ADMIN_PASSWORD", "test-admin-password")
+
 from sqlmodel import SQLModel  # noqa: E402
 
 from app.main import app  # noqa: E402
-from app.modules.auth.models import Usuario  # noqa: E402
-from app.modules.clientes.models import Cliente  # noqa: E402
+from app.modules.clientes.models import Cliente, Vehiculo  # noqa: E402
 from app.modules.ordenes.models import EstadoOrden  # noqa: E402
 from app.modules.repuestos.models import Repuesto  # noqa: E402
-from app.modules.vehiculos.models import Vehiculo  # noqa: E402
+from app.modules.usuarios.models import Usuario  # noqa: E402
 
 ESTADOS = (
     ("PENDIENTE", "Pendiente", 1, False),

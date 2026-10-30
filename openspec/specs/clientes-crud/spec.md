@@ -1,4 +1,4 @@
-# clientes-crud Specification
+﻿# clientes-crud Specification
 
 ## Purpose
 
@@ -22,11 +22,11 @@ El sistema SHALL crear un cliente con `nombre`, `documento` y `telefono` obligat
 - **THEN** la API responde 409
 
 ### Requirement: Consulta y listado de clientes
-El sistema SHALL permitir consultar un cliente por id y listar clientes de forma paginada.
+El sistema SHALL permitir consultar un cliente por id, incluyendo sus vehículos, y listar clientes de forma paginada.
 
 #### Scenario: Cliente existente
 - **WHEN** se consulta `GET /clientes/{id}` de un cliente existente
-- **THEN** la API responde 200 con sus datos públicos
+- **THEN** la API responde 200 con sus datos públicos y la lista `vehiculos`
 
 #### Scenario: Cliente inexistente
 - **WHEN** se consulta `GET /clientes/{id}` de un id que no existe
@@ -36,7 +36,7 @@ El sistema SHALL permitir consultar un cliente por id y listar clientes de forma
 - **WHEN** se consulta `GET /clientes?page=1&size=10`
 - **THEN** la API responde 200 con el envoltorio de paginación
 
-### Requirement: Actualización parcial de cliente
+### Requirement: Alta de vehículo de un cliente\nEl sistema SHALL permitir dar de alta un vehículo en `POST /clientes/{id}/vehiculos`, usando el cliente de la ruta.\n\n#### Scenario: Alta válida\n- **WHEN** se envía `POST /clientes/{id}/vehiculos` con patente, marca, modelo y año\n- **THEN** la API responde 201 con el vehículo asociado al cliente\n\n#### Scenario: Cliente inexistente\n- **WHEN** se envía el alta contra un cliente que no existe\n- **THEN** la API responde 404\n\n### Requirement: Actualización parcial de cliente
 El sistema SHALL actualizar solo los campos enviados (`nombre`, `documento`, `telefono`, `usuario_id`) y validar la unicidad de documento y usuario.
 
 #### Scenario: Cambio de teléfono

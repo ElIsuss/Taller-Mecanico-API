@@ -1,0 +1,22 @@
+@host = http://localhost:8000
+
+### C-01: parámetro de ruta no entero -> 422, el handler no se ejecuta
+GET {{host}}/ordenes/abc
+
+### C-17: catálogo de estados ordenado por posición
+GET {{host}}/estados-orden
+
+### C-17: filtro por un estado que el contrato no declara -> 422
+GET {{host}}/ordenes?estado=NO_EXISTE
+
+### C-16: búsqueda con intento de inyección -> lista vacía, total 0
+GET {{host}}/repuestos?q=' OR '1'='1
+
+### C-16: paginación con filtro, size=1 -> total 1, pages 1
+GET {{host}}/repuestos?q=freno&size=1
+
+### C-16: page=2 con una sola página -> 422
+GET {{host}}/repuestos?q=freno&size=1&page=2
+
+### C-16: size fuera de límite -> 422
+GET {{host}}/repuestos?size=500

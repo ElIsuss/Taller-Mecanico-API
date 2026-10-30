@@ -9,6 +9,7 @@ from app.core.database import get_session
 from app.core.pagination import Pagina, PaginaParams, construir_pagina
 from app.modules.ordenes import service
 from app.modules.ordenes.schemas import (
+    EstadoOrdenCodigo,
     EstadoOrdenRead,
     OrdenAccion,
     OrdenCreate,
@@ -59,11 +60,15 @@ async def obtener_estado(codigo: str, session: SessionDep) -> EstadoOrdenRead:
 async def listar_ordenes(
     session: SessionDep,
     params: Annotated[PaginaParams, Depends()],
-    estado: Annotated[str | None, Query(max_length=30)] = None,
+    estado: Annotated[EstadoOrdenCodigo | None, Query()] = None,
     vehiculo_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> Pagina[OrdenRead]:
     ordenes, total = await service.listar_ordenes(
-        session, params.offset, params.size, estado, vehiculo_id
+        session,
+        params.offset,
+        params.size,
+        estado.value if estado is not None else None,
+        vehiculo_id,
     )
     return construir_pagina(ordenes, total, params)
 

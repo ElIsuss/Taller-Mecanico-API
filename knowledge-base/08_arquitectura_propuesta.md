@@ -1,4 +1,4 @@
-# Arquitectura Propuesta
+﻿# Arquitectura Propuesta
 
 ## Patrones aplicados
 
@@ -18,16 +18,16 @@ proyecto/
 ├── app/
 │   ├── core/                          (config, seguridad, base de datos, excepciones)
 │   └── modules/
-│       ├── auth/                      (modelos, schemas, repositorio, unit_of_work, service, router)
-│       ├── clientes/
-│       ├── vehiculos/
-│       ├── repuestos/
-│       ├── ordenes/
-│       └── roles/
-├── alembic/                           (migraciones: una autogenerate + una escrita a mano para el disparador)
+│       ├── usuarios/                  (usuario, asignacion_rol, intento_acceso, evento_seguridad)
+│       ├── clientes/                  (cliente y vehiculo)
+│       ├── repuestos/                 (repuesto, movimiento_stock, historial_precio_repuesto)
+│       ├── ordenes/                   (estado_orden, orden_trabajo, item_orden, historial_estado_orden)
+│       └── health/                    (sólo router.py: /health/live y /health/ready)
+├── migrations/                        (configuración de Alembic y sus versiones)
+├── test/                              (archivos .http y solo_agregado.sql)
 ├── seed.py                            (datos iniciales obligatorios)
 ├── .env                               (no se versiona; credenciales nunca en código)
-├── env.example                        (sin secretos)
+├── .env.example                       (sin secretos)
 └── pyproject.toml / requirements.txt
 ```
 
@@ -44,8 +44,15 @@ Estructura obligatoria: `app/core/` y `app/modules/<modulo>/` (con modelos, sche
 
 | Variable | Descripción | Ejemplo | Sensible |
 |----------|-------------|---------|----------|
-| DATABASE_URL | Cadena de conexión a PostgreSQL (asyncpg) | postgresql+asyncpg://user:pass@localhost:5432/taller | Y |
-| SECRET_KEY | Clave de firma de JWT | (generada aleatoriamente) | Y |
+| DATABASE_URL | URL completa opcional; tiene prioridad sobre las variables sueltas | postgresql+asyncpg://user:pass@localhost:5432/taller | Y |
+| POSTGRES_HOST | Host de PostgreSQL | localhost | N |
+| POSTGRES_USER | Usuario de PostgreSQL | postgres | N |
+| POSTGRES_PASSWORD | Contraseña de PostgreSQL (sin valor por defecto) | — | Y |
+| POSTGRES_DB | Nombre de la base | taller_mecanico | N |
+| POSTGRES_PORT | Puerto de PostgreSQL | 5432 | N |
+| POOL_SIZE | Tamaño del pool del motor async | 10 | N |
+| SQL_ECHO | Muestra las consultas SQL en consola para diagnóstico | false | N |
+| SECRET_KEY | Clave de firma de JWT (sin valor por defecto) | (generada aleatoriamente) | Y |
 | ALGORITHM | Algoritmo de JWT | HS256 | N |
 | ACCESS_TOKEN_EXPIRE_MINUTES | Expiración del token | 30 | N |
 | BCRYPT_ROUNDS | Factor de costo de bcrypt | 12 | N |
