@@ -153,7 +153,7 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
   - `knowledge-base/04_modelo_de_datos.md` (§Entidades)
 
 ### [C-04] `autenticacion`
-- **Estado**: `[ ]` pendiente
+- **Estado**: [x] completado
 - **Puntos**: 16 | **Orden sugerido**: 4
 - **Scope**:
   - bcrypt con costo configurable (`BCRYPT_ROUNDS`), fuera del bucle de eventos (`to_thread` + semáforo)
