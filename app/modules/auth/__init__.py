@@ -3,3 +3,4 @@
 from app.modules.usuarios import models, router, schemas, service
 
 __all__ = ["models", "router", "schemas", "service"]
+

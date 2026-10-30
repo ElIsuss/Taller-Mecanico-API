@@ -108,3 +108,4 @@ The system SHALL perform atomic registration creating a user, a CLIENTE role ass
 #### Scenario: Fallo si el email o documento ya está registrado
 - **WHEN** the user sends a POST request to `/auth/register` with duplicated email or document
 - **THEN** the system returns 409 Conflict
+
