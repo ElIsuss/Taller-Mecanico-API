@@ -1,22 +1,72 @@
 @host = http://localhost:8000
 
+# Antes de ejecutar: python seed.py
+# C-01 no requiere auth (validación de parámetro de ruta)
+# C-16 (repuestos) requiere auth (ADMIN/RECEPCION/MECANICO/CLIENTE)
+# C-17 (estados-orden y filtro órdenes) requiere auth
+
+### Login admin
+# @name loginAdmin
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
+
+### Login cliente (para C-16/C-17 con rol CLIENTE)
+# @name loginCliente
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "cliente@example.com",
+  "password": "Secreta123!"
+}
+
+---
+
 ### C-01: parámetro de ruta no entero -> 422, el handler no se ejecuta
+# @no-cookie-jar
 GET {{host}}/ordenes/abc
 
-### C-17: catálogo de estados ordenado por posición
+---
+
+### C-17: catálogo de estados ordenado por posición (requiere auth)
+# @no-cookie-jar
 GET {{host}}/estados-orden
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
+###
 ### C-17: filtro por un estado que el contrato no declara -> 422
+# @no-cookie-jar
 GET {{host}}/ordenes?estado=NO_EXISTE
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
-### C-16: búsqueda con intento de inyección -> lista vacía, total 0
+---
+
+### C-16: búsqueda con intento de inyección -> lista vacía, total 0 (requiere auth)
+# @no-cookie-jar
 GET {{host}}/repuestos?q=' OR '1'='1
+Cookie: {{loginCliente.response.headers.Set-Cookie}}
 
+###
 ### C-16: paginación con filtro, size=1 -> total 1, pages 1
+# @no-cookie-jar
 GET {{host}}/repuestos?q=freno&size=1
+Cookie: {{loginCliente.response.headers.Set-Cookie}}
 
+###
 ### C-16: page=2 con una sola página -> 422
+# @no-cookie-jar
 GET {{host}}/repuestos?q=freno&size=1&page=2
+Cookie: {{loginCliente.response.headers.Set-Cookie}}
 
+###
 ### C-16: size fuera de límite -> 422
+# @no-cookie-jar
 GET {{host}}/repuestos?size=500
+Cookie: {{loginCliente.response.headers.Set-Cookie}}

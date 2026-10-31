@@ -26,7 +26,7 @@ Este proyecto forma parte de un trabajo práctico académico de Programación II
 - **bcrypt** para el hash de contraseñas
 - **PyJWT** para la gestión de tokens
 - **Uvicorn** como servidor ASGI
-- **pytest** para pruebas automatizadas
+
 
 ## Funcionalidades principales
 

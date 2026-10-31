@@ -1,0 +1,88 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+# Credenciales del seed: admin@example.com / Secreta123!
+
+### Login admin
+# @name login
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
+
+### C-12: reponer bujías para habilitar la terminación de la orden 2
+# @no-cookie-jar
+POST {{host}}/repuestos/3/reponer
+Content-Type: application/json
+Cookie: {{login.response.headers.Set-Cookie}}
+
+{
+  "cantidad": 10,
+  "motivo": "Reposición C-12",
+  "usuario_id": 1
+}
+
+### C-12: terminar la orden 2 -> 200, descuenta stock y registra historial
+# @no-cookie-jar
+POST {{host}}/ordenes/2/terminar
+Content-Type: application/json
+Cookie: {{login.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 1
+}
+
+### C-12: detalle de la orden terminada
+# @no-cookie-jar
+GET {{host}}/ordenes/2
+Cookie: {{login.response.headers.Set-Cookie}}
+
+### C-15: crear orden con 2 ítems
+# @name ordenDos
+# @no-cookie-jar
+POST {{host}}/ordenes
+Content-Type: application/json
+Cookie: {{login.response.headers.Set-Cookie}}
+
+{
+  "vehiculo_id": 1,
+  "falla": "C-15 dos ítems",
+  "usuario_id": 1,
+  "items": [
+    { "repuesto_id": 1, "cantidad": 1 },
+    { "repuesto_id": 2, "cantidad": 1 }
+  ]
+}
+
+### C-15: crear orden con 4 ítems
+# @name ordenCuatro
+# @no-cookie-jar
+POST {{host}}/ordenes
+Content-Type: application/json
+Cookie: {{login.response.headers.Set-Cookie}}
+
+{
+  "vehiculo_id": 1,
+  "falla": "C-15 cuatro ítems",
+  "usuario_id": 1,
+  "items": [
+    { "repuesto_id": 1, "cantidad": 1 },
+    { "repuesto_id": 2, "cantidad": 1 },
+    { "repuesto_id": 3, "cantidad": 1 },
+    { "repuesto_id": 4, "cantidad": 1 }
+  ]
+}
+
+### C-15: detalle con 2 ítems (misma cantidad de consultas que con 4)
+# @no-cookie-jar
+GET {{host}}/ordenes/{{ordenDos.response.body.$.id}}
+Cookie: {{login.response.headers.Set-Cookie}}
+
+### C-15: detalle con 4 ítems
+# @no-cookie-jar
+GET {{host}}/ordenes/{{ordenCuatro.response.body.$.id}}
+Cookie: {{login.response.headers.Set-Cookie}}

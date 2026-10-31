@@ -2,10 +2,48 @@
 
 # Antes de ejecutar: python seed.py
 # El seed deja al usuario 4 (mecanico@example.com) y la orden 2 en EN_REPARACION.
+# Credenciales: mecanico@example.com / Secreta123!  |  admin@example.com / Secreta123!
+
+### Login admin
+# @name loginAdmin
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
+
+### Login recepcion (para C-10 alta de orden)
+# @name loginRecepcion
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "recepcion@example.com",
+  "password": "Secreta123!"
+}
+
+### Login mecanico (para C-11/C-12 terminar orden)
+# @name loginMecanico
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "mecanico@example.com",
+  "password": "Secreta123!"
+}
+
+---
 
 ### C-10: alta de orden con dos ítems -> 201, precios copiados, total e historial
+# @no-cookie-jar
 POST {{host}}/ordenes
 Content-Type: application/json
+Cookie: {{loginRecepcion.response.headers.Set-Cookie}}
 
 {
   "vehiculo_id": 1,
@@ -17,9 +55,12 @@ Content-Type: application/json
   ]
 }
 
+###
 ### C-10: repuesto inexistente -> 409 y la orden no queda creada
+# @no-cookie-jar
 POST {{host}}/ordenes
 Content-Type: application/json
+Cookie: {{loginRecepcion.response.headers.Set-Cookie}}
 
 {
   "vehiculo_id": 1,
@@ -28,27 +69,45 @@ Content-Type: application/json
   "items": [{ "repuesto_id": 999999, "cantidad": 1 }]
 }
 
+---
+
 ### C-11: terminar la orden 2 (pide 4 bujías y hay 2) -> 409 sin cambios
+# @no-cookie-jar
 POST {{host}}/ordenes/2/terminar
 Content-Type: application/json
+Cookie: {{loginMecanico.response.headers.Set-Cookie}}
 
 { "usuario_id": 4 }
+
+---
 
 ### C-12: reponer 2 bujías y terminar la orden 2 -> 200
+# @no-cookie-jar
 POST {{host}}/repuestos/3/reponer
 Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
-{ "cantidad": 2, "motivo": "compra", "usuario_id": 3 }
+{ "cantidad": 2, "motivo": "compra", "usuario_id": 1 }
 
 ###
+# @no-cookie-jar
 POST {{host}}/ordenes/2/terminar
 Content-Type: application/json
+Cookie: {{loginMecanico.response.headers.Set-Cookie}}
 
 { "usuario_id": 4 }
 
+---
+
 ### C-12: stock y movimientos resultantes
+# @no-cookie-jar
 GET {{host}}/repuestos/3
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 ###
+# @no-cookie-jar
 GET {{host}}/repuestos/3/movimientos
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 ###
+# @no-cookie-jar
 GET {{host}}/ordenes/2
+Cookie: {{loginMecanico.response.headers.Set-Cookie}}

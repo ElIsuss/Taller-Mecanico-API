@@ -1,0 +1,59 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+# Credenciales seed: admin@example.com / Secreta123!
+
+### Login admin (para casos que requieren autenticación)
+# @name loginAdmin
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
+
+---
+
+### C-02: Registro exitoso de nuevo cliente -> 201, cookie HttpOnly, rol CLIENTE
+# @name registroOk
+# @no-cookie-jar
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "nuevo_cliente@test.com",
+  "nombre": "Nuevo Cliente Test",
+  "password": "ClaveSegura123!",
+  "documento": "DOC-NUEVO-001",
+  "telefono": "555-9999"
+}
+
+###
+# Verificar que no deja fila suelta si falla: email duplicado -> 409
+# @no-cookie-jar
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "nombre": "Duplicado",
+  "password": "ClaveSegura123!",
+  "documento": "DOC-DUPLICADO",
+  "telefono": "555-9999"
+}
+
+###
+# Verificar que no deja fila suelta si falla: documento duplicado -> 409
+# @no-cookie-jar
+POST {{host}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "otro@test.com",
+  "nombre": "Duplicado Doc",
+  "password": "ClaveSegura123!",
+  "documento": "DOC-LAURA",
+  "telefono": "555-9999"
+}

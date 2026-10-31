@@ -1,0 +1,120 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+# Seed: admin (id=1, ADMIN), admin2 (id=2, ADMIN), recepcion (id=3), mecanico (id=4, MECANICO), mecanico2 (id=5, MECANICO), cliente (id=6, CLIENTE), nuevo (id=7, MECANICO con debe_cambiar_password=True)
+
+### Login admin
+# @name loginAdmin
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
+
+### Login mecanico (id=4)
+# @name loginMecanico
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "mecanico@example.com",
+  "password": "Secreta123!"
+}
+
+### Login mecanico2 (id=5)
+# @name loginMecanico2
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "mecanico2@example.com",
+  "password": "Secreta123!"
+}
+
+---
+
+### C-07: Revocar rol MECANICO a mecanico2 (id=5) con sesión admin -> 200, revocada_en seteado
+# @no-cookie-jar
+POST {{host}}/auth/roles/revocar
+Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 5,
+  "rol": "MECANICO"
+}
+
+###
+### C-07: Con la MISMA cookie de mecanico2, siguiente petición -> 403 (rol revocado)
+# @no-cookie-jar
+GET {{host}}/auth/yo
+Cookie: {{loginMecanico2.response.headers.Set-Cookie}}
+
+###
+### C-07: /auth/yo de admin muestra diferencia (tiene ADMIN vigente)
+# @no-cookie-jar
+GET {{host}}/auth/yo
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+---
+
+### C-07: Vencimiento en el pasado -> 422 al asignar
+# @no-cookie-jar
+POST {{host}}/auth/roles/asignar
+Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 6,
+  "rol": "MECANICO",
+  "vence_en": "2020-01-01T00:00:00Z"
+}
+
+###
+### C-07: Vencimiento sin zona horaria -> 422
+# @no-cookie-jar
+POST {{host}}/auth/roles/asignar
+Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 6,
+  "rol": "MECANICO",
+  "vence_en": "2025-12-31T23:59:59"
+}
+
+###
+### C-07: Vencimiento válido (con zona horaria) -> 201
+# @no-cookie-jar
+POST {{host}}/auth/roles/asignar
+Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 6,
+  "rol": "MECANICO",
+  "vence_en": "2025-12-31T23:59:59-03:00"
+}
+
+###
+### C-07: Autoprotección - admin no puede revocarse su propio ADMIN -> 409
+# @no-cookie-jar
+POST {{host}}/auth/roles/revocar
+Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 1,
+  "rol": "ADMIN"
+}
+
+###
+### C-07: Eventos de seguridad (solo ADMIN)
+# @no-cookie-jar
+GET {{host}}/auth/eventos-seguridad
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}

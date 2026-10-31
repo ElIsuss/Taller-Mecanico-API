@@ -1,0 +1,37 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+
+### C-03: Login exitoso -> 200, cookie Set-Cookie con HttpOnly, SameSite=Lax, Max-Age
+# @name loginC03
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
+
+###
+# Verificar que el cuerpo NO trae token (solo id, email, nombre, rol, iat)
+# Verificar que la cookie tiene: HttpOnly; SameSite=Lax; Max-Age=1800; Path=/
+# La cookie se guarda automáticamente en loginC03.response.headers.Set-Cookie
+
+---
+
+### C-03: Sin cookie -> 401 en endpoint protegido
+# @no-cookie-jar
+GET {{host}}/auth/yo
+
+###
+# Con Authorization: Bearer (no soportado) -> 401
+# @no-cookie-jar
+GET {{host}}/auth/yo
+Authorization: Bearer token-falso
+
+###
+# Con cookie válida -> 200
+# @no-cookie-jar
+GET {{host}}/auth/yo
+Cookie: {{loginC03.response.headers.Set-Cookie}}

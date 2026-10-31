@@ -234,7 +234,7 @@ Carga de puntos por agente: **A = 40 pts**, **B = 30 pts**, **C = 30 pts** (tota
 > Nota: `C-08` requiere `C-03` y `C-06` (GATE 4).
 
 ### [C-08] `lecturas-sin-n1-y-asincronia`
-- **Estado**: `[ ]` pendiente
+- **Estado**: `[x]` completado
 - **Puntos**: 8 | **Orden sugerido**: 8
 - **Scope**:
   - Carga anticipada en repositorio (`selectinload`/`joinedload`) para lecturas sin N+1

@@ -1,48 +1,101 @@
 ﻿@host = http://localhost:8000
 
 # Antes de ejecutar: python seed.py
+# Requiere ADMIN para PATCH/POST/DELETE en repuestos y vehiculos
+# Credenciales admin: admin@example.com / Secreta123!
 
-### C-16: PATCH parcial -> sólo cambia lo enviado
-PATCH {{host}}/repuestos/2
+### Login admin
+# @name loginAdmin
+# @no-cookie-jar
+POST {{host}}/auth/login
 Content-Type: application/json
 
-{ "descripcion": "Pastillas de freno delanteras", "usuario_id": 3 }
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
 
-### C-16: PATCH del stock -> 422
+---
+
+### C-16: PATCH parcial -> sólo cambia lo enviado (requiere ADMIN)
+# @no-cookie-jar
 PATCH {{host}}/repuestos/2
 Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+{ "descripcion": "Pastillas de freno delanteras", "usuario_id": 1 }
+
+---
+
+### C-16: PATCH del stock -> 422 (stock no editable por PATCH)
+# @no-cookie-jar
+PATCH {{host}}/repuestos/2
+Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
 { "stock": 99 }
 
-### C-18: cambiar el precio -> 200 y una línea en /precios
+---
+
+### C-18: cambiar el precio -> 200 y una línea en /precios (requiere ADMIN)
+# @no-cookie-jar
 PATCH {{host}}/repuestos/1
 Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
-{ "precio": "9000.00", "usuario_id": 3 }
+{ "precio": "9000.00", "usuario_id": 1 }
 
 ###
+# @no-cookie-jar
 GET {{host}}/repuestos/1/precios
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
-### C-18: cambiar sólo la descripción -> 200 y no agrega historial
+---
+
+### C-18: cambiar sólo la descripción -> 200 y no agrega historial (requiere ADMIN)
+# @no-cookie-jar
 PATCH {{host}}/repuestos/1
 Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
-{ "descripcion": "Filtro de aceite premium", "usuario_id": 3 }
+{ "descripcion": "Filtro de aceite premium", "usuario_id": 1 }
 
 ###
+# @no-cookie-jar
 GET {{host}}/repuestos/1/precios
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
-### C-19: dar de baja el vehículo 2 (sin órdenes) y registrar su patente para otro cliente -> 204 y 201
+---
+
+### C-19: dar de baja el vehículo 2 (sin órdenes) -> 204 (requiere ADMIN)
+# @no-cookie-jar
 DELETE {{host}}/vehiculos/2
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
 ###
+### C-19: registrar su patente para otro cliente -> 201 (requiere ADMIN)
+# @no-cookie-jar
 POST {{host}}/clientes/2/vehiculos
 Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
-{ "patente": "EF456GH", "marca": "Ford", "modelo": "Focus", "anio": 2018 }
+{
+  "patente": "EF456GH",
+  "marca": "Ford",
+  "modelo": "Focus",
+  "anio": 2018
+}
 
-### C-19: segunda patente vigente igual -> 409
+###
+### C-19: segunda patente vigente igual -> 409 (requiere ADMIN)
+# @no-cookie-jar
 POST {{host}}/vehiculos
 Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
 
-{ "cliente_id": 1, "patente": "EF456GH", "marca": "Otra", "modelo": "Otro", "anio": 2022 }
+{
+  "cliente_id": 1,
+  "patente": "EF456GH",
+  "marca": "Otra",
+  "modelo": "Otro",
+  "anio": 2022 }

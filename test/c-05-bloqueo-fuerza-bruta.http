@@ -1,0 +1,69 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+
+### C-05: 6 intentos fallidos seguidos -> 429 con Retry-After; los 5 fallos quedan en intento_acceso
+# @name loginC05
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "ClaveIncorrecta1"
+}
+
+###
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "ClaveIncorrecta2"
+}
+
+###
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "ClaveIncorrecta3"
+}
+
+###
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "ClaveIncorrecta4"
+}
+
+###
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "ClaveIncorrecta5"
+}
+
+###
+# 6º intento -> 429 con Retry-After
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "ClaveIncorrecta6"
+}
+
+###
+# Verificar que los 5 fallos están en intento_acceso (requiere psql o endpoint admin)
+# Nota: ejecutar después de seed.py para resetear contadores

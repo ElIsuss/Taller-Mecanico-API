@@ -2,13 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.core.dependencies import requiere_rol
 from app.core.pagination import Pagina, PaginaParams, construir_pagina
 from app.modules.ordenes import service
+from app.modules.ordenes.notificaciones import enviar_aviso_cliente
 from app.modules.ordenes.schemas import (
     EstadoOrdenCodigo,
     EstadoOrdenRead,
@@ -142,9 +143,16 @@ async def iniciar_orden(
     dependencies=[Depends(requiere_rol("ADMIN", "MECANICO"))],
 )
 async def terminar_orden(
-    orden_id: OrdenId, data: OrdenAccion, uow: OrdenUowDep
+    orden_id: OrdenId,
+    data: OrdenAccion,
+    uow: OrdenUowDep,
+    background_tasks: BackgroundTasks,
 ) -> OrdenRead:
-    return await service.terminar_orden(uow, orden_id, data.usuario_id)
+    orden = await service.terminar_orden(uow, orden_id, data.usuario_id)
+    background_tasks.add_task(
+        enviar_aviso_cliente, orden.id, orden.cliente, orden.estado
+    )
+    return orden
 
 
 @router.post(
@@ -155,6 +163,13 @@ async def terminar_orden(
     dependencies=[Depends(requiere_rol("ADMIN", "RECEPCION", "CLIENTE"))],
 )
 async def cancelar_orden(
-    orden_id: OrdenId, data: OrdenAccion, uow: OrdenUowDep
+    orden_id: OrdenId,
+    data: OrdenAccion,
+    uow: OrdenUowDep,
+    background_tasks: BackgroundTasks,
 ) -> OrdenRead:
-    return await service.cancelar_orden(uow, orden_id, data.usuario_id)
+    orden = await service.cancelar_orden(uow, orden_id, data.usuario_id)
+    background_tasks.add_task(
+        enviar_aviso_cliente, orden.id, orden.cliente, orden.estado
+    )
+    return orden

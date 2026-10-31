@@ -1,0 +1,85 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+# Orden 1: Laura (cliente_id=1, usuario_id=6), PENDIENTE, 1 item
+# Orden 2: Jorge (cliente_id=2, SIN usuario), EN_REPARACION, 4 bujías, mecanico_id=4
+
+### Login admin
+# @name loginAdmin
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
+
+### Login cliente Laura (usuario_id=6, cliente_id=1)
+# @name loginCliente
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "cliente@example.com",
+  "password": "Secreta123!"
+}
+
+### Login mecanico (id=4, asignado a orden 2)
+# @name loginMecanico
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "mecanico@example.com",
+  "password": "Secreta123!"
+}
+
+---
+
+### C-13: Dueño cancela su orden PENDIENTE (orden 1 de Laura) -> 200
+# @no-cookie-jar
+POST {{host}}/ordenes/1/cancelar
+Content-Type: application/json
+Cookie: {{loginCliente.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 6
+}
+
+###
+### C-13: Cliente intenta cancelar orden ajena (orden 2 de Jorge, sin usuario) -> 403
+# @no-cookie-jar
+POST {{host}}/ordenes/2/cancelar
+Content-Type: application/json
+Cookie: {{loginCliente.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 6
+}
+
+###
+### C-13: Admin cancela orden terminada (orden 2 después de C-12) -> 409
+# Nota: ejecutar C-12 primero para terminar orden 2
+# @no-cookie-jar
+POST {{host}}/ordenes/2/cancelar
+Content-Type: application/json
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 1
+}
+
+###
+### C-13: Recepción cancela orden PENDIENTE (orden 1 si no se canceló antes) -> 200
+# Requiere seed fresco para que orden 1 esté PENDIENTE
+# @no-cookie-jar
+POST {{host}}/ordenes/1/cancelar
+Content-Type: application/json
+Cookie: {{loginRecepcion.response.headers.Set-Cookie}}
+
+{
+  "usuario_id": 3
+}

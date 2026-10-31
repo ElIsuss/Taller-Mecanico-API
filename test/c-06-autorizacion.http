@@ -1,0 +1,100 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+# Seed crea: admin (id=1), recepcion (id=3), mecanico (id=4), cliente (id=6)
+# Cliente tiene usuario_id=6 vinculado a cliente Laura (id=1) con vehiculos 1 y 2
+# Jorge (id=2) es cliente sin usuario, vehiculo 3
+# Orden 1: Laura, PENDIENTE, 1 item (pastillas)
+# Orden 2: Jorge, EN_REPARACION, 4 bujías, mecanico_id=4
+
+### Login admin
+# @name loginAdmin
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "Secreta123!"
+}
+
+### Login recepcion
+# @name loginRecepcion
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "recepcion@example.com",
+  "password": "Secreta123!"
+}
+
+### Login mecanico
+# @name loginMecanico
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "mecanico@example.com",
+  "password": "Secreta123!"
+}
+
+### Login cliente (Laura, tiene usuario_id=6)
+# @name loginCliente
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "cliente@example.com",
+  "password": "Secreta123!"
+}
+
+---
+
+### C-06: Sin autenticación -> 401
+# @no-cookie-jar
+GET {{host}}/ordenes
+
+###
+### C-06: Admin ve todas las órdenes -> 200
+# @no-cookie-jar
+GET {{host}}/ordenes
+Cookie: {{loginAdmin.response.headers.Set-Cookie}}
+
+###
+### C-06: Recepción ve todas las órdenes -> 200
+# @no-cookie-jar
+GET {{host}}/ordenes
+Cookie: {{loginRecepcion.response.headers.Set-Cookie}}
+
+###
+### C-06: Mecánico ve todas las órdenes -> 200
+# @no-cookie-jar
+GET {{host}}/ordenes
+Cookie: {{loginMecanico.response.headers.Set-Cookie}}
+
+###
+### C-06: Cliente ve solo SU orden (Laura ve orden 1, NO ve orden 2 de Jorge) -> 200
+# @no-cookie-jar
+GET {{host}}/ordenes
+Cookie: {{loginCliente.response.headers.Set-Cookie}}
+
+###
+### C-06: Cliente intenta ver orden ajena (orden 2 de Jorge) -> 403
+# @no-cookie-jar
+GET {{host}}/ordenes/2
+Cookie: {{loginCliente.response.headers.Set-Cookie}}
+
+###
+### C-06: Cliente ve su orden (orden 1) -> 200
+# @no-cookie-jar
+GET {{host}}/ordenes/1
+Cookie: {{loginCliente.response.headers.Set-Cookie}}
+
+###
+### C-06: Repuestos - Cliente -> 403 (solo ADMIN/RECEPCION/MECANICO)
+# @no-cookie-jar
+GET {{host}}/repuestos
+Cookie: {{loginCliente.response.headers.Set-Cookie}}

@@ -1,0 +1,28 @@
+@host = http://localhost:8000
+
+# Antes de ejecutar: python seed.py
+
+### C-04: Login con correo existente y contraseña mala -> 401 "Invalid credentials"
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "ClaveIncorrecta"
+}
+
+###
+# C-04: Login con correo inexistente -> 401 "Invalid credentials" (mismo cuerpo, tiempo parecido)
+# @no-cookie-jar
+POST {{host}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "noexiste@test.com",
+  "password": "CualquierClave"
+}
+
+###
+# C-04: Login con correo existente pero cuenta inactiva -> 401 "Account disabled"
+# (Requiere crear usuario inactivo; se omite porque seed no crea inactivos)
